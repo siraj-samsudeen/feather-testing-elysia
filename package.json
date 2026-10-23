@@ -30,7 +30,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "bun test --timeout 20000",
+    "test": "bun test",
     "test:pglite": "FEATHER_DB=pglite bun test",
     "test:postgres": "FEATHER_DB=postgres DATABASE_URL=${DATABASE_URL:-postgres://postgres:postgres@127.0.0.1:5432/feather_elysia_test} bun test",
     "typecheck": "tsc --noEmit",
