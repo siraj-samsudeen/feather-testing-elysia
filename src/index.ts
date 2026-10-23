@@ -13,6 +13,7 @@
  * set up, and everything is torn down after the test, even when it fails.
  */
 import { createRequire } from "node:module";
+import { treaty, type Treaty } from "@elysiajs/eden";
 import type { AnyElysia } from "elysia";
 import {
   defineCoreTest,
@@ -122,6 +123,8 @@ export interface ElysiaFixtures<App extends AnyElysia, Db> {
   handler: RequestHandler;
   /** The app listening on a free port (app.listen(0)), stopped after the test. Only started when asked for. */
   baseUrl: string;
+  /** An Eden Treaty client on the app, in-process (app.handle, no port), typed from its routes. */
+  api: Treaty.Create<App>;
   /** With a db configured: the Drizzle handle bound to this test's transaction, handed to createApp. */
   db: Db;
   /** With a db configured: raw SQL on the same transaction. */
@@ -175,6 +178,9 @@ export function featherTest<App extends AnyElysia, Db = never>(
           },
     handler: async ({ app }: { app: App }, use: (handler: RequestHandler) => Promise<void>) => {
       await use((request) => app.handle(request));
+    },
+    api: async ({ app }: { app: App }, use: (api: Treaty.Create<App>) => Promise<void>) => {
+      await use(treaty<App>(app));
     },
     baseUrl: async ({ app }: { app: App }, use: (url: string) => Promise<void>) => {
       app.listen(0);
