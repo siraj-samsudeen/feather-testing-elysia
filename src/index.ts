@@ -428,19 +428,32 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
         await context.addCookies(forPlaywright(cookies, baseUrl));
         // A host-only and a Domain cookie are two cookies to the browser, so
         // the add may leave the earlier login's one beside the new one: drop
-        // a cookie this login replaces (same name, path, effective domain)
-        // that still holds a different value.
-        for (const stored of await context.cookies()) {
-          const replacing = cookies.find(
+        // an unpartitioned cookie this login replaces (same name, path,
+        // effective domain) that still holds a different value. A
+        // partitioned cookie is another cookie, never replaced here.
+        const snapshot = await context.cookies();
+        const replaced = snapshot.filter((stored) =>
+          cookies.some(
             (c) =>
+              !stored.partitionKey &&
               c.name === stored.name &&
               (c.path ?? "/") === stored.path &&
-              effectiveDomain(c, host) === stored.domain.replace(/^\./, "").toLowerCase(),
-          );
-          if (replacing && replacing.value !== stored.value) {
-            await context.clearCookies({ name: stored.name, domain: stored.domain, path: stored.path });
-          }
+              effectiveDomain(c, host) === stored.domain.replace(/^\./, "").toLowerCase() &&
+              c.value !== stored.value,
+          ),
+        );
+        if (replaced.length === 0) return;
+        for (const stored of replaced) {
+          await context.clearCookies({ name: stored.name, domain: stored.domain, path: stored.path });
         }
+        // clearCookies can't filter by partition (or tell a cookie from its
+        // twin), so put back whatever went that was not meant to: the new
+        // cookies themselves, partitioned cookies of the same name.
+        const remaining = await context.cookies();
+        const same = (a: (typeof snapshot)[number], b: (typeof snapshot)[number]) =>
+          a.name === b.name && a.domain === b.domain && a.path === b.path && a.partitionKey === b.partitionKey;
+        const lost = snapshot.filter((c) => !replaced.includes(c) && !remaining.some((r) => same(r, c)));
+        if (lost.length > 0) await context.addCookies(lost);
       };
       if (auth.cookies.length > 0) await toContext(auth.cookies);
       auth.prepare.push(toContext);
