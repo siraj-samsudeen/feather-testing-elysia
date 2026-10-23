@@ -7,14 +7,28 @@
     "type": "git",
     "url": "git+https://github.com/siraj-samsudeen/feather-testing-elysia.git"
   },
-  "keywords": ["testing", "elysia", "bun", "fixtures", "playwright", "eden", "drizzle", "postgres", "pglite"],
+  "keywords": [
+    "testing",
+    "elysia",
+    "bun",
+    "fixtures",
+    "playwright",
+    "eden",
+    "drizzle",
+    "postgres",
+    "pglite"
+  ],
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
     ".": "./src/index.ts"
   },
-  "files": ["src", "README.md", "LICENSE"],
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "test": "bun test",
     "test:pglite": "FEATHER_DB=pglite bun test",
@@ -28,11 +42,19 @@
     "elysia": ">=1.4.0 <2",
     "feather-testing-core": ">=0.7.0-beta.1 <0.8",
     "feather-testing-postgres": ">=0.2.0 <0.3",
-    "playwright": ">=1.64.0"
+    "happy-dom": ">=20.0.0",
+    "playwright": ">=1.64.0 <2"
   },
   "peerDependenciesMeta": {
-    "feather-testing-postgres": { "optional": true },
-    "playwright": { "optional": true }
+    "feather-testing-postgres": {
+      "optional": true
+    },
+    "happy-dom": {
+      "optional": true
+    },
+    "playwright": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.11",

@@ -15,6 +15,7 @@
 import { createRequire } from "node:module";
 import { treaty, type Treaty } from "@elysiajs/eden";
 import type { AnyElysia } from "elysia";
+import { Session } from "feather-testing-core";
 import {
   defineCoreTest,
   type CoreFixtures,
@@ -172,15 +173,16 @@ class AuthState {
   cookies: SessionCookie[] = [];
   /** Run before the cookies change; a guard throws to refuse the login. */
   guards: (() => void)[] = [];
-  /** Run after they change, e.g. to add them to a live browser context. */
+  /** Run before they change, e.g. to add them to a live browser context. */
   appliers: ((cookies: SessionCookie[]) => Promise<void>)[] = [];
 
+  /** The cookies change only once every guard and applier has accepted them. */
   async logIn(cookies: SessionCookie[]): Promise<void> {
     for (const guard of this.guards) guard();
+    for (const apply of this.appliers) await apply(cookies);
     const key = (c: SessionCookie) => `${c.name}\u0000${c.domain ?? ""}\u0000${c.path ?? "/"}`;
     const replaced = new Set(cookies.map(key));
     this.cookies = [...this.cookies.filter((c) => !replaced.has(key(c))), ...cookies];
-    for (const apply of this.appliers) await apply(cookies);
   }
 }
 
@@ -299,6 +301,11 @@ function postgresFixtures<Db>(db: DbOptions | FeatherDbLike<Db>): Record<string,
   return mod.postgresFixtures(db);
 }
 
+/** Core's request adapter, loaded synchronously on first use (it needs happy-dom). */
+function loadRequestAdapter(): typeof import("feather-testing-core/request") {
+  return createRequire(import.meta.url)("feather-testing-core/request");
+}
+
 /** bun:test's { test, afterAll }, loaded only when no runner is given. */
 function bunRunner(): Runner {
   const require = createRequire(import.meta.url);
@@ -321,14 +328,22 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
             "or test.with({ mintSession }).",
         );
       }
+      // Everything that can fail happens before the login state changes.
       const cookies = toCookies(await mintSession({ db, user, app }));
-      await auth.logIn(cookies);
-      const { createSession } = await import("feather-testing-core/request");
-      return {
+      let request: RequestSession | undefined;
+      const signedIn: SignedIn<App> = {
         cookies,
-        request: createSession((request) => app.handle(request), { cookies }),
+        // Created on its first DSL call: core's request adapter needs
+        // happy-dom, which a browser- or API-only project may not have.
+        request: lazySession(
+          Session.prototype,
+          () => (request ??= loadRequestAdapter().createSession((r) => app.handle(r), { cookies })),
+          () => request,
+        ),
         api: apiClient(app, () => cookies),
       };
+      await auth.logIn(cookies);
+      return signedIn;
     };
   const dbFixtures = options.db === undefined ? {} : postgresFixtures(options.db);
   const fixtures = {
@@ -374,7 +389,7 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
       { handler, auth }: { handler: RequestHandler; auth: AuthState },
       use: (request: RequestSession) => Promise<void>,
     ) => {
-      const { createSession, Session } = await import("feather-testing-core/request");
+      const { createSession } = await import("feather-testing-core/request");
       let real: RequestSession | undefined;
       auth.guards.push(() => {
         if (real) {

@@ -109,7 +109,8 @@ The complete example (a tiny Elysia app with `users`, `sessions` and `todos` tab
 ```bash
 bun add -d feather-testing-elysia feather-testing-core elysia @elysiajs/eden
 bun add -d playwright                     # for session (a real browser); then: bunx playwright install chromium
-bun add -d happy-dom                      # for request (core's request adapter parses pages with it)
+bun add -d happy-dom                      # only for request sessions (core's request adapter parses pages with it);
+                                          # logInAs, api and session work without it
 bun add -d feather-testing-postgres drizzle-orm @electric-sql/pglite   # for db
 ```
 
