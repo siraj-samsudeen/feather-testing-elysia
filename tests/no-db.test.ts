@@ -1,6 +1,7 @@
 // featherTest without a database: app, handler, request, overrides.
 import { expect } from "bun:test";
 import { Elysia } from "elysia";
+import { value } from "feather-testing-core/fixtures";
 import { featherTest } from "../src/index.ts";
 
 const created: { deps: unknown }[] = [];
@@ -52,5 +53,23 @@ test.with({
       return "<h1>Overridden</h1>";
     }) as unknown as ReturnType<typeof createApp>, // a different app on purpose
 })("test.with({ createApp }) swaps the app", async ({ request }) => {
+  await request.visit("/").assertText("Overridden");
+});
+
+const overridden = () =>
+  new Elysia().get("/", ({ set }) => {
+    set.headers["content-type"] = "text/html; charset=utf-8";
+    return "<h1>Overridden</h1>";
+  }) as unknown as ReturnType<typeof createApp>;
+
+test.extend({ extra: "x" }).with({ createApp: overridden })(
+  "after .extend(), .with({ createApp }) still takes a plain function",
+  async ({ request, extra }) => {
+    expect(extra).toBe("x");
+    await request.visit("/").assertText("Overridden");
+  },
+);
+
+test.with({ createApp: value(overridden) })("an explicit value(createApp) works too", async ({ request }) => {
   await request.visit("/").assertText("Overridden");
 });

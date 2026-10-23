@@ -129,7 +129,7 @@ featherTest<App, Db, User>({
 }): TestFn<FeatherFixtures<App, Db, User>>
 ```
 
-It returns core's test function (`defineCoreTest(runner).extend(...)`), so `.extend({...})` adds your own fixtures and `.with({...})` replaces values for a group of tests:
+It returns core's test function (`defineCoreTest(runner).extend(...)`), so `.extend({...})` adds your own fixtures and `.with({...})` replaces values for a group of tests. `createApp` and `mintSession` are taken as plain functions there; no `value(...)` needed, unlike other function values in core's `.with()`:
 
 ```ts
 const withFakeMailer = test.with({ createApp: ({ db }) => createApp({ db, mailer: fakeMailer }) });

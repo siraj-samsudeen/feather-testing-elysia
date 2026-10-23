@@ -20,13 +20,49 @@ import { Session, type SessionCookie } from "feather-testing-core";
 import { cookieHeaderFor } from "feather-testing-core/cookies";
 import {
   defineCoreTest,
+  FixtureValue,
+  value,
   type CoreFixtures,
+  type FixtureDef,
   type FixtureDefs,
   type Runner,
+  type TestBody,
   type TestFn,
 } from "feather-testing-core/fixtures";
 
 export type { Runner, TestFn } from "feather-testing-core/fixtures";
+
+/** The options whose values are functions: .with() takes them as values, not fixture functions. */
+const FUNCTION_OPTIONS = ["createApp", "mintSession"] as const;
+type FunctionOption = (typeof FUNCTION_OPTIONS)[number];
+
+/** featherTest's test function: core's, with .with() taking createApp / mintSession as plain functions. */
+export interface FeatherTestFn<F> {
+  (name: string, body: TestBody<F>): void;
+  (name: string, uses: (keyof F & string)[], body: TestBody<F>): void;
+  extend<G extends object>(fixtures: FixtureDefs<G, F & G>): FeatherTestFn<F & G>;
+  with(overrides: {
+    [K in keyof F]?: K extends FunctionOption ? F[K] | FixtureValue<F[K]> : FixtureDef<F[K], F>;
+  }): FeatherTestFn<F>;
+}
+
+/**
+ * Core's .with() reads a function as a fixture function; createApp and
+ * mintSession are option values that happen to be functions, so wrap them
+ * in value() on the way in.
+ */
+function withFunctionOptions<F>(base: TestFn<F>): FeatherTestFn<F> {
+  const test = ((...args: Parameters<TestFn<F>>) => (base as (...a: unknown[]) => void)(...args)) as FeatherTestFn<F>;
+  test.extend = (fixtures) => withFunctionOptions(base.extend(fixtures));
+  test.with = (overrides) => {
+    const wrapped: Record<string, unknown> = { ...overrides };
+    for (const key of FUNCTION_OPTIONS) {
+      if (typeof wrapped[key] === "function") wrapped[key] = value(wrapped[key]);
+    }
+    return withFunctionOptions(base.with(wrapped as Parameters<TestFn<F>["with"]>[0]));
+  };
+  return test;
+}
 /** A cookie a session starts with (core's): no domain = host-only for the app's host; expires in seconds, none or negative = a session cookie. */
 export type { SessionCookie } from "feather-testing-core";
 
@@ -202,12 +238,11 @@ class AuthState {
    * at once (unless mintSession itself started it), and its queued steps
    * are dropped so they don't run on the next await.
    */
-  track<S extends { run(): Promise<void> }>(session: S, which: "session" | "request"): S {
+  track<S extends { run(): Promise<void>; discard(): number }>(session: S, which: "session" | "request"): S {
     const run = session.run.bind(session);
     session.run = () => {
       if (this.logins > 0 && !insideMintSession()) {
-        // Core has no public way to discard queued steps; its Session keeps them in `steps`.
-        if (Array.isArray(Reflect.get(session, "steps"))) Reflect.set(session, "steps", []);
+        session.discard(); // drop the refused steps, so they don't run on the next await
         return Promise.reject(
           new Error(`${which} steps were started while logInAs(…) was in progress — await logInAs first.`),
         );
@@ -438,7 +473,7 @@ function bunRunner(): Runner {
 
 export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
   options: FeatherTestOptions<App, Db, User>,
-): TestFn<FeatherFixtures<App, Db, User>> {
+): FeatherTestFn<FeatherFixtures<App, Db, User>> {
   const runner = options.runner ?? bunRunner();
   type LogInDeps = { app: App; mintSession: MintSession<User, Db, App> | undefined; auth: AuthState };
   type UseLogInAs = (logInAs: (user: User) => Promise<SignedIn<App>>) => Promise<void>;
@@ -631,7 +666,8 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
       }
     },
   };
-  return defineCoreTest(runner).extend(
+  const test = defineCoreTest(runner).extend(
     fixtures as unknown as FixtureDefs<ElysiaFixtures<App, Db, User>, CoreFixtures & ElysiaFixtures<App, Db, User>>,
   ) as unknown as TestFn<FeatherFixtures<App, Db, User>>;
+  return withFunctionOptions(test);
 }
