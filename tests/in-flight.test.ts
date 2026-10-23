@@ -2,7 +2,8 @@
 // next steps — anything else fails loudly instead of racing.
 import { expect } from "bun:test";
 import { createApp } from "./example/app.ts";
-import { SESSION_COOKIE, userForToken } from "./example/auth.ts";
+import { SESSION_COOKIE, startSession, userForToken, type AppDb } from "./example/auth.ts";
+import type { SessionCookie } from "../src/index.ts";
 import { test, users } from "./example/fixtures.ts";
 
 // A route that waits, then says which user its request arrived as.
@@ -58,3 +59,54 @@ withSlowWhoami("awaited steps and logins in turn work as usual", async ({ db, lo
   await request.visit("/whoami-slow").assertText("arrived as Bob");
   await session.visit("/whoami-slow").assertText("arrived as Bob");
 });
+
+// mintSession's exemptions last only while it runs, not in tasks it leaves behind.
+{
+  let deferred: (() => Promise<unknown>) | undefined;
+  let slowMint = false;
+  const withDeferred = test.with({
+    mintSession: async ({ db, user }: { db: AppDb; user: { id: number } }): Promise<SessionCookie> => {
+      const task = deferred;
+      deferred = undefined;
+      if (task) setTimeout(() => void task(), 30); // outlives this mint
+      if (slowMint) await Bun.sleep(150);
+      return { name: SESSION_COOKIE, value: (await startSession(db, user.id)).token };
+    },
+  });
+
+  withDeferred("a task left by one login's mint, firing during the next login, is refused", async ({ db, logInAs, request }) => {
+    let outcome: unknown;
+    deferred = () => request.visit("/").run().then(() => "ran", (error: unknown) => error);
+    const done = new Promise<void>((resolve) => {
+      const task = deferred!;
+      deferred = async () => {
+        outcome = await task();
+        resolve();
+      };
+    });
+    slowMint = false;
+    await logInAs(await users.insert(db, { name: "Alice" })); // leaves the task behind
+    slowMint = true;
+    const bob = logInAs(await users.insert(db, { name: "Bob" })); // the task fires while this runs
+    await done;
+    await bob;
+    slowMint = false;
+    expect(String(outcome)).toContain("started while logInAs(…) was in progress");
+  });
+
+  withDeferred("logInAs from a task a mint left behind is a normal login, not re-entry", async ({ db, logInAs, api }) => {
+    const bob = await users.insert(db, { name: "Bob" });
+    let outcome: unknown;
+    const done = new Promise<void>((resolve) => {
+      deferred = async () => {
+        outcome = await logInAs(bob).then(() => "logged in", (error: unknown) => error);
+        resolve();
+      };
+    });
+    slowMint = false;
+    await logInAs(await users.insert(db, { name: "Alice" }));
+    await done;
+    expect(outcome).toBe("logged in");
+    expect((await api.api.me.get()).data).toMatchObject({ name: "Bob" });
+  });
+}

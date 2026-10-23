@@ -205,7 +205,7 @@ class AuthState {
   track<S extends { run(): Promise<void> }>(session: S, which: "session" | "request"): S {
     const run = session.run.bind(session);
     session.run = () => {
-      if (this.logins > 0 && !minting.getStore()) {
+      if (this.logins > 0 && !insideMintSession()) {
         // Core has no public way to discard queued steps; its Session keeps them in `steps`.
         if (Array.isArray(Reflect.get(session, "steps"))) Reflect.set(session, "steps", []);
         return Promise.reject(
@@ -403,8 +403,17 @@ function loadRequestAdapter(): typeof import("feather-testing-core/request") {
   return createRequire(import.meta.url)("feather-testing-core/request");
 }
 
-/** Set while a mintSession runs: a logInAs from inside it would wait for itself. */
-const minting = new AsyncLocalStorage<true>();
+/**
+ * Marks the async context of a mintSession call with a per-call token,
+ * active only until that call settles: tasks it leaves behind (a timer, an
+ * unawaited promise) keep the token but not the exemptions.
+ */
+const minting = new AsyncLocalStorage<{ active: boolean }>();
+
+/** Inside a mintSession call that has not settled yet. */
+function insideMintSession(): boolean {
+  return minting.getStore()?.active === true;
+}
 
 /** bun:test's { test, afterAll }, loaded only when no runner is given. */
 function bunRunner(): Runner {
@@ -428,7 +437,7 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
             "or test.with({ mintSession }).",
         );
       }
-      if (minting.getStore()) {
+      if (insideMintSession()) {
         throw new Error(
           "logInAs was called from inside mintSession — mint the session directly instead " +
             "(insert the session row and return its cookie); logInAs would wait for itself.",
@@ -444,7 +453,14 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
       auth.beginLogin();
       return auth.serialize(async () => {
       // Everything that can fail happens before the login state changes.
-      const cookies = toCookies(await minting.run(true, () => mintSession({ db, user, app })));
+      const token = { active: true };
+      let minted: SessionCookie | SessionCookie[];
+      try {
+        minted = await minting.run(token, () => mintSession({ db, user, app }));
+      } finally {
+        token.active = false;
+      }
+      const cookies = toCookies(minted);
       let request: RequestSession | undefined;
       const signedIn: SignedIn<App> = {
         cookies,
