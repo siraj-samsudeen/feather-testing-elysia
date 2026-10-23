@@ -107,3 +107,43 @@ secondLoginExpires(-1)(
     await request.visit("/").assertText("Alice's todos");
   },
 );
+
+secondLoginExpires(-1)(
+  "a failure while putting back a partitioned twin still restores the snapshot",
+  async ({ db, logInAs, session, page, baseUrl, api, request, auth }) => {
+    call = 0;
+    await logInAs(await users.insert(db, { name: "Alice" }));
+    const context = page.context();
+    await context.addCookies([
+      { name: SESSION_COOKIE, value: "partitioned-twin", domain: "localhost", path: "/", secure: true, sameSite: "None", partitionKey: new URL(baseUrl).origin },
+    ]);
+    const describe = (all: Awaited<ReturnType<typeof context.cookies>>) =>
+      all.map((c) => `${c.name}=${c.value}@${c.domain}${c.path}|${c.partitionKey ?? ""}`).sort();
+    const snapshot = describe(await context.cookies());
+    const before = [...auth.cookies];
+
+    // For Bob's login only: the clear takes more than it was asked for (the
+    // partitioned twin included), and the first addCookies, the put-back,
+    // rejects once.
+    const realClear = context.clearCookies.bind(context);
+    const realAdd = context.addCookies.bind(context);
+    let rejected = false;
+    context.clearCookies = async () => realClear();
+    context.addCookies = async (list) => {
+      if (!rejected) {
+        rejected = true;
+        throw new Error("put-back refused");
+      }
+      return realAdd(list);
+    };
+    await expect(logInAs(await users.insert(db, { name: "Bob" }))).rejects.toThrow("put-back refused");
+    context.clearCookies = realClear;
+    context.addCookies = realAdd;
+
+    expect(describe(await context.cookies())).toEqual(snapshot);
+    expect(auth.cookies).toEqual(before);
+    expect((await api.me.get()).data).toMatchObject({ name: "Alice" });
+    await request.visit("/").assertText("Alice's todos");
+    await session.visit("/").assertText("Alice's todos");
+  },
+);

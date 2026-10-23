@@ -42,17 +42,18 @@ export function browserLogin(page: Page, baseUrl: string): (cookies: SessionCook
       );
     const before = await context.cookies();
     const replaced = before.filter(touches);
-    for (const stored of replaced) {
-      await context.clearCookies({ name: stored.name, domain: stored.domain, path: stored.path });
-    }
-    // clearCookies can't filter by partition: put back what it took
-    // that was not meant to go (a partitioned twin).
-    await keep(before.filter((c) => !replaced.includes(c)));
     try {
+      for (const stored of replaced) {
+        await context.clearCookies({ name: stored.name, domain: stored.domain, path: stored.path });
+      }
+      // clearCookies can't filter by partition: put back what it took
+      // that was not meant to go (a partitioned twin).
+      await keep(before.filter((c) => !replaced.includes(c)));
       await context.addCookies(forPlaywright(cookies, baseUrl));
     } catch (error) {
-      // The browser refused a cookie: put the previous login back, so a
-      // failed login leaves the context as it was. The add may have
+      // Any step failed (the clear, the put-back, or the browser refusing
+      // a cookie): put the previous login back, so a failed login leaves
+      // the context as it was. The add may have
       // installed some cookies before failing (Chromium's batches have
       // been all-or-nothing, but nothing promises it), so first clear
       // every cookie with one of this login's identities, then restore
