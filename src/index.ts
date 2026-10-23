@@ -130,7 +130,7 @@ export interface FeatherTestOptions<App extends AnyElysia, Db, User> {
 export interface ElysiaFixtures<App extends AnyElysia, Db, User> {
   /** Option: the app factory (override with test.with({ createApp })). */
   createApp: (deps: { db: Db }) => App;
-  /** A fresh app for the test: createApp({ db }), or createApp({}) without a db. */
+  /** A fresh app for the test: createApp({ db }), or createApp({}) without a db; its async plugins already loaded. */
   app: App;
   /** The app's request handler (app.handle), for the request adapter. */
   handler: RequestHandler;
@@ -373,10 +373,14 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
     app:
       options.db === undefined
         ? async ({ createApp }: { createApp: (deps: object) => App }, use: (app: App) => Promise<void>) => {
-            await use(createApp({}));
+            const app = createApp({});
+            await app.modules; // async plugins (.use(import(...)), .use(promise)) finish loading first
+            await use(app);
           }
         : async ({ createApp, db }: { createApp: (deps: { db: Db }) => App; db: Db }, use: (app: App) => Promise<void>) => {
-            await use(createApp({ db }));
+            const app = createApp({ db });
+            await app.modules; // async plugins finish loading first
+            await use(app);
           },
     handler: async ({ app }: { app: App }, use: (handler: RequestHandler) => Promise<void>) => {
       await use((request) => app.handle(request));

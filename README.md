@@ -146,7 +146,7 @@ withFakeMailer("sends the welcome email", async ({ request }) => { /* … */ });
 
 | Fixture | Scope | Default | Override |
 |---|---|---|---|
-| `app` | test | `createApp({ db })`, or `createApp({})` without a db. Never listens unless `baseUrl` is asked for | `test.with({ createApp })` |
+| `app` | test | `createApp({ db })`, or `createApp({})` without a db, after its async plugins load (`await app.modules`). Never listens unless `baseUrl` is asked for | `test.with({ createApp })` |
 | `handler` | test | `(req) => app.handle(req)` | `.with({ handler })` |
 | `baseUrl` | test | `app.listen(0)` → `http://localhost:<port>`; `app.stop()` after. Only when a test (or `session`) asks for it: a request-only test never opens a port | `.with({ baseUrl: "http://…" })` to point at another server |
 | `session` | test | A Playwright session (core's adapter) on `page`, `baseUrl` preset, signed in by `logInAs` (each login is added to its browser context at once, so the latest login wins) | `.with({ headed, record, browserName, slowMo })` |
