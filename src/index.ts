@@ -384,8 +384,11 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
       : async ({ app, mintSession, auth, db }: LogInDeps & { db: Db }, use: UseLogInAs) => {
           await use(logInAs({ app, mintSession, auth, db }));
         },
+    // baseUrl before page: fixtures are torn down in reverse order of setup,
+    // so the browser context closes (dropping its connections) before the
+    // server stops.
     session: async (
-      { page, baseUrl, auth }: { page: CoreFixtures["page"]; baseUrl: string; auth: AuthState },
+      { baseUrl, page, auth }: { baseUrl: string; page: CoreFixtures["page"]; auth: AuthState },
       use: (session: PlaywrightSession) => Promise<void>,
     ) => {
       const { createSession } = await import("feather-testing-core/playwright");
@@ -436,7 +439,9 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
         app.listen(0);
         await use(`http://localhost:${app.server!.port}`);
       } finally {
-        if (app.server) await app.stop();
+        // Force-close open connections (an SSE stream, a WebSocket): a
+        // graceful stop would wait for them, and the db cleanup after it.
+        if (app.server) await app.stop(true);
       }
     },
   };
