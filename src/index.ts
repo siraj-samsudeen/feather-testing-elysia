@@ -13,7 +13,7 @@
  * set up, and everything is torn down after the test, even when it fails.
  */
 import { createRequire } from "node:module";
-import { treaty, type Treaty } from "@elysiajs/eden";
+import type { Treaty } from "@elysiajs/eden";
 import type { AnyElysia } from "elysia";
 import { Session, type SessionCookie } from "feather-testing-core";
 import { cookieHeaderFor } from "feather-testing-core/cookies";
@@ -207,7 +207,31 @@ function apiClient<App extends AnyElysia>(app: App, cookies: () => readonly Sess
     }
     return app.handle(request);
   }) as typeof fetch;
-  return treaty<App>(APP_ORIGIN, { fetcher });
+  return loadTreaty()<App>(APP_ORIGIN, { fetcher });
+}
+
+/** @elysiajs/eden's treaty, loaded on first use: an optional peer, needed only for api. */
+function loadTreaty(): typeof import("@elysiajs/eden").treaty {
+  try {
+    return (createRequire(import.meta.url)("@elysiajs/eden") as typeof import("@elysiajs/eden")).treaty;
+  } catch (error) {
+    throw new Error("featherTest: the api fixture needs @elysiajs/eden: bun add -d @elysiajs/eden", { cause: error });
+  }
+}
+
+/** A client created on its first property access (so @elysiajs/eden loads only when api is used). */
+function lazyClient<T extends object>(make: () => T): T {
+  let client: T | undefined;
+  const real = () => (client ??= make());
+  return new Proxy({} as T, {
+    get(_target, key) {
+      if (key === "then") return undefined; // not a thenable, so it can be returned from async code
+      return Reflect.get(real(), key);
+    },
+    has(_target, key) {
+      return key in real();
+    },
+  });
 }
 
 /**
@@ -352,7 +376,7 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
             () => (request ??= loadRequestAdapter().createSession((r) => app.handle(r), { cookies })),
             () => request,
           ),
-          api: apiClient(app, () => cookies),
+          api: lazyClient(() => apiClient(app, () => cookies)),
         };
         await auth.logIn(cookies);
         return signedIn;

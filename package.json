@@ -47,6 +47,9 @@
     "playwright": ">=1.51.0 <2"
   },
   "peerDependenciesMeta": {
+    "@elysiajs/eden": {
+      "optional": true
+    },
     "feather-testing-postgres": {
       "optional": true
     },

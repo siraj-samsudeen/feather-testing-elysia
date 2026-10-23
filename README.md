@@ -107,7 +107,8 @@ The complete example (a tiny Elysia app with `users`, `sessions` and `todos` tab
 ## Installation
 
 ```bash
-bun add -d feather-testing-elysia feather-testing-core elysia @elysiajs/eden
+bun add -d feather-testing-elysia feather-testing-core elysia
+bun add -d @elysiajs/eden                 # only for api (an Eden Treaty client); without it, api says to install it
 bun add -d playwright                     # for session (a real browser; peer >=1.51.0, tested on Playwright 1.64.1); then: bunx playwright install chromium
 bun add -d happy-dom                      # only for request sessions (core's request adapter parses pages with it);
                                           # logInAs, api and session work without it
