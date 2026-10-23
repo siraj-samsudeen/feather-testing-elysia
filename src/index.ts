@@ -70,7 +70,6 @@ type RequestHandler = (request: Request) => Response | Promise<Response>;
 type PlaywrightSession = CoreFixtures["session"];
 type RequestSession = CoreFixtures["request"];
 
-
 /**
  * The consumer's half of logInAs: make `user` signed in the way the app does
  * (insert a sessions row, sign a token, ...) and return the cookie(s) the
@@ -291,7 +290,6 @@ function cookieKey(cookie: SessionCookie): string {
   return `${cookie.name}\u0000${effectiveDomain(cookie)}\u0000${cookie.path ?? "/"}`;
 }
 
-
 /**
  * An Eden Treaty client that calls app.handle in-process on APP_ORIGIN,
  * adding the cookies that match each request's URL (a cookie header the
@@ -338,7 +336,6 @@ function lazySession<T extends object>(proto: object, make: () => T, created: ()
   });
 }
 
-/** Core's cookie rule for Playwright: without a domain, set for baseUrl's host by domain + path. */
 /**
  * A negative `expires` (-1 in Playwright's cookies) means a session cookie.
  * Leave it out before handing cookies to Playwright, which accepts no
@@ -348,6 +345,7 @@ function asSessionCookies(cookies: readonly SessionCookie[]): SessionCookie[] {
   return cookies.map(({ expires, ...rest }) => (expires !== undefined && expires >= 0 ? { ...rest, expires } : rest));
 }
 
+/** Core's cookie rule for Playwright: without a domain, set for baseUrl's host by domain + path. */
 function forPlaywright(cookies: SessionCookie[], baseUrl: string) {
   const origin = new URL(baseUrl);
   return asSessionCookies(cookies).map(({ domain, path, ...rest }) => {
@@ -524,42 +522,42 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
       auth.refuseWhileRunning();
       auth.beginLogin();
       return auth.serialize(async () => {
-      // Everything that can fail happens before the login state changes.
-      const token: MintToken = { active: true };
-      let minted: SessionCookie | SessionCookie[];
-      let result: ReturnType<typeof mintSession>;
-      try {
-        result = minting.run(token, () => mintSession({ db, user, app })); // not awaited yet
-      } catch (error) {
-        token.active = false; // threw synchronously
-        throw error;
-      }
-      if (result instanceof Promise || typeof (result as { then?: unknown })?.then === "function") {
-        if (result instanceof Promise) token.pending = result;
+        // Everything that can fail happens before the login state changes.
+        const token: MintToken = { active: true };
+        let minted: SessionCookie | SessionCookie[];
+        let result: ReturnType<typeof mintSession>;
         try {
-          minted = await result;
-        } finally {
-          token.active = false;
+          result = minting.run(token, () => mintSession({ db, user, app })); // not awaited yet
+        } catch (error) {
+          token.active = false; // threw synchronously
+          throw error;
         }
-      } else {
-        token.active = false; // a plain value: the mint is over, before any await
-        minted = result as SessionCookie | SessionCookie[];
-      }
-      const cookies = toCookies(minted);
-      let request: RequestSession | undefined;
-      const signedIn: SignedIn<App> = {
-        cookies,
-        // Created on its first DSL call: core's request adapter needs
-        // happy-dom, which a browser- or API-only project may not have.
-        request: lazySession(
-          Session.prototype,
-          () => (request ??= loadRequestAdapter().createSession((r) => app.handle(r), { cookies })),
-          () => request,
-        ),
-        api: apiClient(app, () => cookies),
-      };
-      await auth.logIn(cookies);
-      return signedIn;
+        if (result instanceof Promise || typeof (result as { then?: unknown })?.then === "function") {
+          if (result instanceof Promise) token.pending = result;
+          try {
+            minted = await result;
+          } finally {
+            token.active = false;
+          }
+        } else {
+          token.active = false; // a plain value: the mint is over, before any await
+          minted = result as SessionCookie | SessionCookie[];
+        }
+        const cookies = toCookies(minted);
+        let request: RequestSession | undefined;
+        const signedIn: SignedIn<App> = {
+          cookies,
+          // Created on its first DSL call: core's request adapter needs
+          // happy-dom, which a browser- or API-only project may not have.
+          request: lazySession(
+            Session.prototype,
+            () => (request ??= loadRequestAdapter().createSession((r) => app.handle(r), { cookies })),
+            () => request,
+          ),
+          api: apiClient(app, () => cookies),
+        };
+        await auth.logIn(cookies);
+        return signedIn;
       }).finally(() => auth.endLogin());
     };
   const dbFixtures = options.db === undefined ? missingDbFixtures() : postgresFixtures(options.db);
