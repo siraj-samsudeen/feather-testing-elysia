@@ -156,6 +156,9 @@ export type FeatherFixtures<App extends AnyElysia, Db, User = unknown> = Omit<
 > &
   ElysiaFixtures<App, Db, User>;
 
+/** How long logInAs waits for running session/request steps (inside core's 30 s per-test budget). */
+const SETTLE_TIMEOUT_MS = 10_000;
+
 /** The cookies the test is signed in with, and who to tell when they change. */
 class AuthState {
   cookies: SessionCookie[] = [];
@@ -168,6 +171,41 @@ class AuthState {
     return run;
   }
 
+  /** Chains of the test's session and request that are running now. */
+  private running = new Set<Promise<unknown>>();
+
+  /** Record when a chain of `session` runs (await, then() and run() all go through run()). */
+  track<S extends { run(): Promise<void> }>(session: S): S {
+    const run = session.run.bind(session);
+    session.run = () => {
+      const chain = run();
+      this.running.add(chain);
+      const done = () => void this.running.delete(chain);
+      chain.then(done, done);
+      return chain;
+    };
+    return session;
+  }
+
+  /**
+   * Wait for running chains to finish, so a response still on its way (an
+   * earlier user's Set-Cookie) can't land after the login and undo it.
+   */
+  private async settle(): Promise<void> {
+    if (this.running.size === 0) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<"timeout">((resolve) => (timer = setTimeout(() => resolve("timeout"), SETTLE_TIMEOUT_MS)));
+    const outcome = await Promise.race([Promise.allSettled([...this.running]), timedOut]);
+    clearTimeout(timer);
+    if (outcome === "timeout") {
+      throw new Error(
+        `logInAs: a session or request chain was still running after ${SETTLE_TIMEOUT_MS / 1000} s; ` +
+          "logInAs waits for running steps to finish. Await the chain before logging in " +
+          "(and don't call logInAs from inside a step).",
+      );
+    }
+  }
+
   /** Phase 1, may fail: e.g. add the cookies to a live browser context. */
   prepare: ((cookies: SessionCookie[]) => Promise<void>)[] = [];
   /** Phase 2, after every prepare succeeded: must not fail (e.g. put the cookies in the request's jar). */
@@ -178,6 +216,7 @@ class AuthState {
    * else changes (auth, api, request keep the previous user).
    */
   async logIn(cookies: SessionCookie[]): Promise<void> {
+    await this.settle();
     for (const prepare of this.prepare) await prepare(cookies);
     const replaced = new Set(cookies.map(cookieKey));
     this.cookies = [...this.cookies.filter((c) => !replaced.has(cookieKey(c))), ...cookies];
@@ -500,14 +539,14 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
       };
       if (auth.cookies.length > 0) await toContext(auth.cookies);
       auth.prepare.push(toContext);
-      await use(createSession(page, { baseUrl }));
+      await use(auth.track(createSession(page, { baseUrl })));
     },
     request: async (
       { handler, auth }: { handler: RequestHandler; auth: AuthState },
       use: (request: RequestSession) => Promise<void>,
     ) => {
       const { createSession } = await import("feather-testing-core/request");
-      const request = createSession(handler, { cookies: [...auth.cookies] });
+      const request = auth.track(createSession(handler, { cookies: [...auth.cookies] }));
       // Each login goes into the jar at once (setCookies is outside the
       // step queue), so the request switches at the same moment as the
       // browser, even under steps already queued.

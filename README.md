@@ -192,6 +192,8 @@ const asBob = await logInAs(bob);           // the test's own session/request/ap
 await asAlice.request.visit("/").refuteText("Bob's errand");
 ```
 
+`logInAs` waits for running steps to finish: a `session` or `request` chain started but not yet awaited (`const p = request.visit(...).run()`) settles first, at most 10 s, so a response still on its way can't set the previous user's cookie after the login. Past 10 s, `logInAs` throws, telling you to await the chain. Don't call `logInAs` from inside a step.
+
 Logins run one at a time, in the order they were called: overlapping `logInAs` calls (`Promise.all([...])`) can't interleave, and the last one started wins everywhere. A failed login doesn't block the next.
 
 Without `mintSession`, `logInAs` throws, naming the option.
