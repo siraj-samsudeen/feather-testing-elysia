@@ -192,6 +192,8 @@ const asBob = await logInAs(bob);           // the test's own session/request/ap
 await asAlice.request.visit("/").refuteText("Bob's errand");
 ```
 
+Logins run one at a time, in the order they were called: overlapping `logInAs` calls (`Promise.all([...])`) can't interleave, and the last one started wins everywhere. A failed login doesn't block the next.
+
 Without `mintSession`, `logInAs` throws, naming the option.
 
 ## `api`

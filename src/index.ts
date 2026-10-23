@@ -158,6 +158,15 @@ export type FeatherFixtures<App extends AnyElysia, Db, User = unknown> = Omit<
 /** The cookies the test is signed in with, and who to tell when they change. */
 class AuthState {
   cookies: SessionCookie[] = [];
+  private tail: Promise<unknown> = Promise.resolve();
+
+  /** Run `login` after every login started before it has settled (passed or failed). */
+  serialize<T>(login: () => Promise<T>): Promise<T> {
+    const run = this.tail.then(login);
+    this.tail = run.catch(() => undefined);
+    return run;
+  }
+
   /** Phase 1, may fail: e.g. add the cookies to a live browser context. */
   prepare: ((cookies: SessionCookie[]) => Promise<void>)[] = [];
   /** Phase 2, after every prepare succeeded: must not fail (e.g. put the cookies in the request's jar). */
@@ -362,6 +371,10 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
             "or test.with({ mintSession }).",
         );
       }
+      // One login at a time, in the order they were called, so overlapping
+      // logins can't interleave their browser steps: the last one started
+      // wins everywhere. A failed login releases the lock.
+      return auth.serialize(async () => {
       // Everything that can fail happens before the login state changes.
       const cookies = toCookies(await mintSession({ db, user, app }));
       let request: RequestSession | undefined;
@@ -378,6 +391,7 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
       };
       await auth.logIn(cookies);
       return signedIn;
+      });
     };
   const dbFixtures = options.db === undefined ? {} : postgresFixtures(options.db);
   const fixtures = {

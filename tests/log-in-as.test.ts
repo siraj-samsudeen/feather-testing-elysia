@@ -4,6 +4,8 @@ import { expect } from "bun:test";
 import { featherTest } from "../src/index.ts";
 import { createApp } from "./example/app.ts";
 import * as schema from "./example/schema.ts";
+import { startSession, type AppDb } from "./example/auth.ts";
+import type { SessionCookie } from "../src/index.ts";
 import { test, todos, users } from "./example/fixtures.ts";
 
 test("logInAs signs in the test's request session", async ({ db, logInAs, request }) => {
@@ -104,4 +106,52 @@ test("switching user between queuing and running a request step runs as the new 
   const chain = request.visit("/"); // queued as Alice, not run yet
   await logInAs(await users.insert(db, { name: "Bob" }));
   await chain.assertText("Bob's todos").refuteText("Alice's todos");
+});
+
+test("overlapping logins: the last one started wins everywhere", async ({ db, logInAs, session, page, request, api, auth }) => {
+  const alice = await users.insert(db, { name: "Alice" });
+  const bob = await users.insert(db, { name: "Bob" });
+  await session.visit("/login");
+  await request.visit("/login");
+
+  await Promise.all([logInAs(alice), logInAs(bob)]);
+
+  expect(auth.cookies).toHaveLength(1);
+  expect((await api.api.me.get()).data).toMatchObject({ name: "Bob" });
+  await request.visit("/").assertText("Bob's todos");
+  await session.visit("/").assertText("Bob's todos");
+  expect((await page.context().cookies()).filter((c) => c.name === "sid")).toHaveLength(1);
+});
+
+test.with({
+  // Alice on example.test, Bob on .example.test: two cookies to the browser.
+  mintSession: async ({ db, user }: { db: AppDb; user: { id: number } }): Promise<SessionCookie> => ({
+    name: "sid",
+    value: (await startSession(db, user.id)).token,
+    domain: (user as { name?: string }).name === "Alice" ? "example.test" : ".example.test",
+  }),
+})("overlapping logins whose cookies the browser keeps apart: the last one started wins", async ({ db, logInAs, session, page, auth }) => {
+  const alice = await users.insert(db, { name: "Alice" });
+  const bob = await users.insert(db, { name: "Bob" });
+  expect(session).toBeDefined(); // sets up the browser side of logInAs
+
+  const [, asBob] = await Promise.all([logInAs(alice), logInAs(bob)]);
+
+  expect(auth.cookies).toEqual(asBob.cookies);
+  const stored = (await page.context().cookies()).filter((c) => c.name === "sid");
+  expect(stored.map((c) => [c.domain, c.value])).toEqual([[".example.test", asBob.cookies[0]!.value]]);
+});
+
+test.with({
+  mintSession: async ({ db, user }: { db: AppDb; user: { id: number } }): Promise<SessionCookie> => {
+    if ((user as { name?: string }).name === "Alice") throw new Error("cannot mint for Alice");
+    return { name: "sid", value: (await startSession(db, user.id)).token };
+  },
+})("a failed login does not block the next one", async ({ db, logInAs, api }) => {
+  const alice = await users.insert(db, { name: "Alice" });
+  const bob = await users.insert(db, { name: "Bob" });
+  const [first, second] = await Promise.allSettled([logInAs(alice), logInAs(bob)]);
+  expect(first.status).toBe("rejected");
+  expect(second.status).toBe("fulfilled");
+  expect((await api.api.me.get()).data).toMatchObject({ name: "Bob" });
 });
