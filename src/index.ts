@@ -464,6 +464,16 @@ function insideMintSession(): boolean {
   return true;
 }
 
+/** Without the db option, db / sql / testDb / dbEngine say how to get them. */
+function missingDbFixtures(): Record<string, unknown> {
+  const missing = (name: string) => async () => {
+    throw new Error(`featherTest: \`${name}\` needs the db option: featherTest({ createApp, db: { migrations: '…' } })`);
+  };
+  return Object.fromEntries(
+    ["db", "sql", "testDb", "dbEngine"].map((name) => [name, [missing(name), { deps: [] }]]),
+  );
+}
+
 /** createApp's result, checked: an Elysia app (something with handle()), not a Promise. */
 function checkedApp<App>(app: App): App {
   const isApp = typeof (app as { handle?: unknown } | null)?.handle === "function";
@@ -552,7 +562,7 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
       return signedIn;
       }).finally(() => auth.endLogin());
     };
-  const dbFixtures = options.db === undefined ? {} : postgresFixtures(options.db);
+  const dbFixtures = options.db === undefined ? missingDbFixtures() : postgresFixtures(options.db);
   const fixtures = {
     ...dbFixtures,
     createApp: [options.createApp, { value: true }],

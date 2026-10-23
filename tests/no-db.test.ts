@@ -101,3 +101,20 @@ withBadCreateApp({ get: () => 1 }, /createApp must return an Elysia app synchron
     expect(app).toBeUndefined();
   },
 );
+
+const noDbOption = featherTest({
+  createApp,
+  runner: expectingSetupError(/featherTest: `(db|sql|testDb|dbEngine)` needs the db option: featherTest\(\{ createApp, db: \{ migrations: '…' \} \}\)/),
+});
+noDbOption("db without the db option says what to configure", async ({ db }) => {
+  expect(db).toBeUndefined(); // never reached
+});
+noDbOption("sql without the db option says what to configure", async ({ sql }) => {
+  expect(sql).toBeUndefined();
+});
+noDbOption("testDb without the db option says what to configure", async ({ testDb }) => {
+  expect(testDb).toBeUndefined();
+});
+noDbOption("dbEngine without the db option says what to configure", async ({ dbEngine }) => {
+  expect(dbEngine).toBeUndefined();
+});
