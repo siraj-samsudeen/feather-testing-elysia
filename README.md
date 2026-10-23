@@ -114,13 +114,7 @@ bun add -d happy-dom                      # only for request sessions (core's re
 bun add -d feather-testing-postgres drizzle-orm @electric-sql/pglite   # for db
 ```
 
-Browser tests launch Chromium and load pages, and the first test of a file starts and migrates the database, so raise bun's per-test limit (5000 ms by default) on the command line:
-
-```bash
-bun test --timeout 20000
-```
-
-(Bun 1.4.2 ignores `timeout` under `[test]` in `bunfig.toml`; only the flag works.)
+Each test gets core's per-test timeout of 30 s (120 s with `HEADED=1`), enough for launching Chromium and for the first test of a file, which starts and migrates the database. It is passed to `bun:test` per test, so bun's own 5 s default doesn't apply. (Bun 1.4.2 ignores `timeout` under `[test]` in `bunfig.toml` anyway.)
 
 The package ships TypeScript source; Bun runs it as is.
 
@@ -206,7 +200,7 @@ Without `mintSession`, `logInAs` throws, naming the option.
 ## Rules
 
 - **Sequential only.** One test owns the database transaction at a time. `bun test` runs files one after another in one process, and a file's tests in order, which is what this needs. Never use `test.concurrent`; feather-testing-postgres's `beginTest()` refuses a second open test.
-- **A test must name its fixtures by destructuring** its first parameter: `async ({ db, session }) => …`. A test that needs none still writes `async ({}) => …` (core can't otherwise see what it uses). In minified code, name them: `test(name, ["session"], fn)`.
+- **A test must name its fixtures by destructuring** its first parameter: `async ({ db, session }) => …`. A test that needs none takes no parameter: `async () => …`. In minified code, name them: `test(name, ["session"], fn)`.
 - **One `featherTest(...)` per project**, in a shared `tests/fixtures.ts`, imported by every test file. The engine (PGlite or Postgres) is started and migrated once per file.
 - **Lanes.** PGlite is the default (`FEATHER_DB` unset): nothing to install. Run a Postgres lane too, pinned to production's major version: `FEATHER_DB=postgres DATABASE_URL=postgres://… bun test`.
 
