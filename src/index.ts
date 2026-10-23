@@ -12,6 +12,7 @@
  * A test destructures what it needs; only that (and what it depends on) is
  * set up, and everything is torn down after the test, even when it fails.
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createRequire } from "node:module";
 import { treaty, type Treaty } from "@elysiajs/eden";
 import type { AnyElysia } from "elysia";
@@ -349,6 +350,9 @@ function loadRequestAdapter(): typeof import("feather-testing-core/request") {
   return createRequire(import.meta.url)("feather-testing-core/request");
 }
 
+/** Set while a mintSession runs: a logInAs from inside it would wait for itself. */
+const minting = new AsyncLocalStorage<true>();
+
 /** bun:test's { test, afterAll }, loaded only when no runner is given. */
 function bunRunner(): Runner {
   const require = createRequire(import.meta.url);
@@ -371,12 +375,18 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
             "or test.with({ mintSession }).",
         );
       }
+      if (minting.getStore()) {
+        throw new Error(
+          "logInAs was called from inside mintSession — mint the session directly instead " +
+            "(insert the session row and return its cookie); logInAs would wait for itself.",
+        );
+      }
       // One login at a time, in the order they were called, so overlapping
       // logins can't interleave their browser steps: the last one started
       // wins everywhere. A failed login releases the lock.
       return auth.serialize(async () => {
       // Everything that can fail happens before the login state changes.
-      const cookies = toCookies(await mintSession({ db, user, app }));
+      const cookies = toCookies(await minting.run(true, () => mintSession({ db, user, app })));
       let request: RequestSession | undefined;
       const signedIn: SignedIn<App> = {
         cookies,

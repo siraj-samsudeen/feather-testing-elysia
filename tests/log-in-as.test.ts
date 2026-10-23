@@ -155,3 +155,30 @@ test.with({
   expect(second.status).toBe("fulfilled");
   expect((await api.api.me.get()).data).toMatchObject({ name: "Bob" });
 });
+
+{
+  let nested: ((user: { id: number }) => Promise<unknown>) | undefined;
+  let nestedError: unknown;
+  test.with({
+    mintSession: async ({ db, user }: { db: AppDb; user: { id: number } }): Promise<SessionCookie> => {
+      if (nested) {
+        const logIn = nested;
+        nested = undefined;
+        nestedError = await logIn(user).then(() => undefined, (error: unknown) => error);
+      }
+      return { name: "sid", value: (await startSession(db, user.id)).token };
+    },
+  })("logInAs called from inside mintSession is refused at once, and later logins work", async ({ db, logInAs, api }) => {
+    const alice = await users.insert(db, { name: "Alice" });
+    nested = logInAs;
+    await Promise.race([
+      logInAs(alice),
+      Bun.sleep(2000).then(() => {
+        throw new Error("deadlocked");
+      }),
+    ]);
+    expect(String(nestedError)).toContain("logInAs was called from inside mintSession");
+    await logInAs(await users.insert(db, { name: "Bob" }));
+    expect((await api.api.me.get()).data).toMatchObject({ name: "Bob" });
+  });
+}
