@@ -174,16 +174,46 @@ class AuthState {
   /** Chains of the test's session and request that are running now. */
   private running = new Set<Promise<unknown>>();
 
-  /** Record when a chain of `session` runs (await, then() and run() all go through run()). */
+  /** Logins started and not yet settled (passed or failed). */
+  private logins = 0;
+  private idleWaiters: (() => void)[] = [];
+
+  /** A login has started: hold new chains until every login has settled. */
+  beginLogin(): void {
+    this.logins++;
+  }
+
+  endLogin(): void {
+    if (--this.logins > 0) return;
+    const waiters = this.idleWaiters;
+    this.idleWaiters = [];
+    for (const wake of waiters) wake();
+  }
+
+  private idle(): Promise<void> {
+    return this.logins === 0 ? Promise.resolve() : new Promise((resolve) => this.idleWaiters.push(resolve));
+  }
+
+  /**
+   * Record when a chain of `session` runs (await, then() and run() all go
+   * through run()). The barrier: a chain started while a login is in
+   * progress waits until the login has committed (or failed) before it
+   * sends anything, unless it was started inside mintSession (which the
+   * login itself is waiting for).
+   */
   track<S extends { run(): Promise<void> }>(session: S): S {
     const run = session.run.bind(session);
-    session.run = () => {
+    // Only a chain that is actually running counts as running: a held one
+    // is not, or a login queued behind the current one would wait for it
+    // while it waits for that login.
+    const start = () => {
       const chain = run();
       this.running.add(chain);
       const done = () => void this.running.delete(chain);
       chain.then(done, done);
       return chain;
     };
+    session.run = () => (this.logins > 0 && !minting.getStore() ? this.idle().then(start) : start());
     return session;
   }
 
@@ -423,6 +453,9 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
       // One login at a time, in the order they were called, so overlapping
       // logins can't interleave their browser steps: the last one started
       // wins everywhere. A failed login releases the lock.
+      // From now until this login settles, newly started session/request
+      // chains are held (the barrier), so none is in flight across the commit.
+      auth.beginLogin();
       return auth.serialize(async () => {
       // Everything that can fail happens before the login state changes.
       const cookies = toCookies(await minting.run(true, () => mintSession({ db, user, app })));
@@ -440,7 +473,7 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
       };
       await auth.logIn(cookies);
       return signedIn;
-      });
+      }).finally(() => auth.endLogin());
     };
   const dbFixtures = options.db === undefined ? {} : postgresFixtures(options.db);
   const fixtures = {
