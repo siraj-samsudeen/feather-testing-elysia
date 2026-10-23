@@ -188,19 +188,30 @@ const cookieHeader = (cookies: readonly SessionCookie[]): string =>
   cookies.map((c) => `${c.name}=${c.value}`).join("; ");
 
 /**
- * An object that is created on first use. The test's session and request
- * are lazy so that cookies minted by logInAs inside the test body can still
- * go in through core's `cookies` option.
+ * A session created on its first DSL call (visit, fillIn, ...), so cookies
+ * minted by logInAs inside the test body still go in through core's
+ * `cookies` option. Other reads (then, Symbol.toStringTag, inspection) see
+ * the prototype and create nothing; in particular the proxy is not a
+ * thenable until created.
  */
-function lazy<T extends object>(make: () => T): T {
-  return new Proxy({} as T, {
-    get(_target, key) {
-      const real = make();
-      const value = Reflect.get(real, key, real);
-      return typeof value === "function" ? value.bind(real) : value;
+function lazySession<T extends object>(proto: object, make: () => T, created: () => T | undefined): T {
+  return new Proxy(Object.create(proto) as T, {
+    get(target, key) {
+      const existing = created();
+      if (existing) {
+        const value = Reflect.get(existing, key, existing);
+        return typeof value === "function" ? value.bind(existing) : value;
+      }
+      const method = typeof key === "string" && key !== "then" && key !== "constructor" ? Reflect.get(proto, key) : undefined;
+      if (typeof method !== "function") return key === "then" ? undefined : Reflect.get(target, key);
+      return (...args: unknown[]) => {
+        const real = make();
+        return (Reflect.get(real, key, real) as (...a: unknown[]) => unknown).apply(real, args);
+      };
     },
     has(_target, key) {
-      return key in make();
+      const existing = created();
+      return existing ? key in existing : key in proto;
     },
   });
 }
@@ -304,18 +315,20 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
       use: (session: PlaywrightSession) => Promise<void>,
     ) => {
       const { createSession } = await import("feather-testing-core/playwright");
-      let real: PlaywrightSession | undefined;
-      auth.appliers.push(async (cookies) => {
-        // Created already: its cookies option has been read, so go to the context.
-        if (real) await page.context().addCookies(forPlaywright(cookies, baseUrl));
-      });
-      await use(lazy(() => (real ??= createSession(page, { baseUrl, cookies: [...auth.cookies] }))));
+      // Each login goes straight into the browser context when logInAs runs,
+      // so the latest login always wins, even over steps already queued.
+      // (Not core's cookies option: it is read when the first step runs,
+      // and would re-seed an earlier user's cookies over a later login.)
+      const toContext = (cookies: SessionCookie[]) => page.context().addCookies(forPlaywright(cookies, baseUrl));
+      if (auth.cookies.length > 0) await toContext(auth.cookies);
+      auth.appliers.push(toContext);
+      await use(createSession(page, { baseUrl }));
     },
     request: async (
       { handler, auth }: { handler: RequestHandler; auth: AuthState },
       use: (request: RequestSession) => Promise<void>,
     ) => {
-      const { createSession } = await import("feather-testing-core/request");
+      const { createSession, Session } = await import("feather-testing-core/request");
       let real: RequestSession | undefined;
       auth.guards.push(() => {
         if (real) {
@@ -326,7 +339,13 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
           );
         }
       });
-      await use(lazy(() => (real ??= createSession(handler, { cookies: [...auth.cookies] }))));
+      await use(
+        lazySession(
+          Session.prototype,
+          () => (real ??= createSession(handler, { cookies: [...auth.cookies] })),
+          () => real,
+        ),
+      );
     },
     api: async ({ app, auth }: { app: App; auth: AuthState }, use: (api: Treaty.Create<App>) => Promise<void>) => {
       await use(treaty<App>(app, { headers: () => (auth.cookies.length ? { cookie: cookieHeader(auth.cookies) } : undefined) }));

@@ -71,3 +71,19 @@ noMint("logInAs without mintSession explains what to configure", async ({ db, lo
   const alice = await users.insert(db);
   await expect(logInAs(alice as never)).rejects.toThrow(/mintSession/);
 });
+
+test("switching user between queuing and running the browser's first step runs as the new user", async ({ db, logInAs, session }) => {
+  await logInAs(await users.insert(db, { name: "Alice" }));
+  const chain = session.visit("/"); // queued as Alice, not run yet
+  await logInAs(await users.insert(db, { name: "Bob" }));
+  await chain.assertText("Bob's todos").refuteText("Alice's todos");
+});
+
+test("incidental reads don't start the request session", async ({ db, logInAs, request }) => {
+  Bun.inspect(request);
+  Object.prototype.toString.call(request);
+  expect("visit" in request).toBe(true);
+  expect((request as unknown as { then?: unknown }).then).toBeUndefined();
+  await logInAs(await users.insert(db, { name: "Alice" })); // would throw if the session had started
+  await request.visit("/").assertText("Alice's todos");
+});
