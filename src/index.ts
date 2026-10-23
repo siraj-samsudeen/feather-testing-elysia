@@ -109,37 +109,6 @@ export interface TestDbLike<Db> {
   raw: unknown;
 }
 
-/** feather-testing-postgres's fixture shape: { scope, deps, setup, teardown }. */
-interface HookFixture {
-  scope: "test" | "file";
-  deps?: readonly string[];
-  setup(deps: Record<string, unknown>): unknown;
-  teardown?(value: unknown, deps: Record<string, unknown>): unknown;
-}
-
-/**
- * feather-testing-postgres's postgresFixtures() return { scope, deps, setup,
- * teardown } definitions; core's engine takes async (fixtures, use) => …
- * functions. This bridges the two.
- */
-function fromHookFixtures(defs: Record<string, HookFixture>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [name, def] of Object.entries(defs)) {
-    out[name] = [
-      async (deps: Record<string, unknown>, use: (value: unknown) => Promise<void>) => {
-        const value = await def.setup(deps);
-        try {
-          await use(value);
-        } finally {
-          await def.teardown?.(value, deps);
-        }
-      },
-      { scope: def.scope, deps: [...(def.deps ?? [])] },
-    ];
-  }
-  return out;
-}
-
 export interface FeatherTestOptions<App extends AnyElysia, Db, User> {
   /** Builds a fresh app per test. Called as createApp({ db }) — or createApp({}) without a db. */
   createApp: (deps: { db: Db }) => App;
@@ -260,7 +229,7 @@ function toCookies(minted: unknown): SessionCookie[] {
 /** feather-testing-postgres's fixtures (an optional peer, loaded only when a db is configured). */
 function postgresFixtures<Db>(db: DbOptions | FeatherDbLike<Db>): Record<string, unknown> {
   const require = createRequire(import.meta.url);
-  let mod: { postgresFixtures(options: unknown): Record<string, HookFixture> };
+  let mod: { postgresFixtures(options: unknown): Record<string, unknown> };
   try {
     mod = require("feather-testing-postgres/fixtures");
   } catch (error) {
@@ -269,7 +238,8 @@ function postgresFixtures<Db>(db: DbOptions | FeatherDbLike<Db>): Record<string,
       { cause: error },
     );
   }
-  return fromHookFixtures(mod.postgresFixtures(db));
+  // Already in core's [async (deps, use) => …, { scope, deps }] shape.
+  return mod.postgresFixtures(db);
 }
 
 /** bun:test's { test, afterAll }, loaded only when no runner is given. */

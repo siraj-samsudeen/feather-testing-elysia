@@ -117,7 +117,7 @@
 
     "cookie": ["cookie@1.1.1", "", {}, "sha512-ei8Aos7ja0weRpFzJnEA9UHJ/7XQmqglbRwnf2ATjcB9Wq874VKH9kfjjirM6UhU2/E5fFYadylyhFldcqSidQ=="],
 
-    "debug": ["debug@4.4.3", "", { "dependencies": { "ms": "^2.1.3" } }, "sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA=="],
+    "debug": ["debug@4.4.3", "", { "dependencies": { "ms": "^2.1.3" }, "peerDependencies": { "supports-color": "*" }, "optionalPeers": ["supports-color"] }, "sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA=="],
 
     "drizzle-kit": ["drizzle-kit@0.31.11", "", { "dependencies": { "@drizzle-team/brocli": "^0.10.2", "@esbuild-kit/esm-loader": "^2.5.5", "esbuild": "^0.25.4", "tsx": "^4.21.0" }, "bin": { "drizzle-kit": "bin.cjs" } }, "sha512-YCYqxTLIB2OCqf6w9/Vef13baBVbwQIPcbT4Y56AfO6B9ajZhDhD8Jkveg/hJvT/iuMloKD/IYYkyMMNhr7Kqg=="],
 
@@ -135,7 +135,7 @@
 
     "feather-testing-core": ["feather-testing-core@vendor/feather-testing-core-0.7.0-beta.1.tgz", { "peerDependencies": { "@testing-library/react": ">=14.0.0", "@testing-library/user-event": ">=14.0.0", "happy-dom": ">=20.0.0", "playwright": ">=1.64.0" }, "optionalPeers": ["@testing-library/react", "@testing-library/user-event", "happy-dom", "playwright"] }, "sha512-vJIIsJ0Nv570S2XXqAVItJXvafaBiqCWjrTk3JYVxnUG0dx9E3nkl17iTvxJDMl802jcRi705Weo11rgU3gnog=="],
 
-    "feather-testing-postgres": ["feather-testing-postgres@vendor/feather-testing-postgres-0.2.0.tgz", { "dependencies": { "feather-testing-core": "^0.4.0" }, "peerDependencies": { "@electric-sql/pglite": ">=0.3", "@happy-dom/global-registrator": ">=15", "@tanstack/react-query": ">=5", "@tanstack/react-router": ">=1", "@testing-library/dom": ">=10", "@testing-library/react": ">=16", "@testing-library/user-event": ">=14", "drizzle-orm": ">=0.44 <1", "postgres": ">=3", "react": ">=18", "react-dom": ">=18", "vitest": ">=2" }, "optionalPeers": ["@electric-sql/pglite", "@happy-dom/global-registrator", "@tanstack/react-query", "@tanstack/react-router", "@testing-library/dom", "@testing-library/react", "@testing-library/user-event", "drizzle-orm", "postgres", "react", "react-dom", "vitest"] }, "sha512-XdWOH01jM0Kf/HFjnzAmWeNalvVtPFAWHzRR7XAXej6YJiZ4Qe+BrW8R+x7Jtzmn7ZyO7o/OFojNxxJys3gfiA=="],
+    "feather-testing-postgres": ["feather-testing-postgres@vendor/feather-testing-postgres-0.2.0.tgz", { "dependencies": { "feather-testing-core": "^0.4.0" }, "peerDependencies": { "@electric-sql/pglite": ">=0.3", "@happy-dom/global-registrator": ">=15", "@tanstack/react-query": ">=5", "@tanstack/react-router": ">=1", "@testing-library/dom": ">=10", "@testing-library/react": ">=16", "@testing-library/user-event": ">=14", "drizzle-orm": ">=0.44 <1", "postgres": ">=3", "react": ">=18", "react-dom": ">=18", "vitest": ">=2" }, "optionalPeers": ["@electric-sql/pglite", "@happy-dom/global-registrator", "@tanstack/react-query", "@tanstack/react-router", "@testing-library/dom", "@testing-library/react", "@testing-library/user-event", "drizzle-orm", "postgres", "react", "react-dom", "vitest"] }, "sha512-XaDKMNLB0OPTMhjpAZ0r6CYUc2Sr7srgsimyhlGAbDmOO0euuXFhR2asPTuBUpa3cXwKCyZksbrOXcnR0y2r5g=="],
 
     "file-type": ["file-type@22.2.0", "", { "dependencies": { "@tokenizer/inflate": "^0.5.1", "strtok3": "^10.5.0", "token-types": "^6.1.2", "uint8array-extras": "^1.6.0" } }, "sha512-XmEVJsRpQMVYC+sWFW+FKAVo2P7/lPctDdWH4UQ1r6oxhdrTobnowdM3z+ZJ93a4J8D3yDpxX0bEvRuFev0vUQ=="],
 
