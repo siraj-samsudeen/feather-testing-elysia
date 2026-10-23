@@ -1,5 +1,5 @@
 // featherTest without a database: app, handler, request, overrides.
-import { expect } from "bun:test";
+import { afterAll, expect, test as bunTest } from "bun:test";
 import { Elysia } from "elysia";
 import { value } from "feather-testing-core/fixtures";
 import { featherTest } from "../src/index.ts";
@@ -73,3 +73,31 @@ test.extend({ extra: "x" }).with({ createApp: overridden })(
 test.with({ createApp: value(overridden) })("an explicit value(createApp) works too", async ({ request }) => {
   await request.visit("/").assertText("Overridden");
 });
+
+// A runner whose tests pass only if the test's setup fails with `message`.
+const expectingSetupError = (message: RegExp) => ({
+  test: (name: string, fn: () => Promise<void>) => bunTest(name, () => expect(fn()).rejects.toThrow(message)),
+  afterAll,
+});
+
+const withBadCreateApp = (returned: unknown, message: RegExp) =>
+  featherTest({ createApp: (() => returned) as unknown as typeof createApp, runner: expectingSetupError(message) });
+
+withBadCreateApp(Promise.resolve(new Elysia()), /createApp must return an Elysia app synchronously \(got a Promise — make it synchronous; async plugins are awaited for you\)/)(
+  "an async createApp is refused with advice",
+  async ({ app }) => {
+    expect(app).toBeUndefined(); // never reached
+  },
+);
+withBadCreateApp(undefined, /createApp must return an Elysia app synchronously \(got undefined\)/)(
+  "createApp returning nothing is refused",
+  async ({ app }) => {
+    expect(app).toBeUndefined();
+  },
+);
+withBadCreateApp({ get: () => 1 }, /createApp must return an Elysia app synchronously \(got an object without handle\(\)\)/)(
+  "createApp returning something else is refused",
+  async ({ app }) => {
+    expect(app).toBeUndefined();
+  },
+);

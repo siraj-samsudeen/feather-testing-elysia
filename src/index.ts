@@ -464,6 +464,19 @@ function insideMintSession(): boolean {
   return true;
 }
 
+/** createApp's result, checked: an Elysia app (something with handle()), not a Promise. */
+function checkedApp<App>(app: App): App {
+  const isApp = typeof (app as { handle?: unknown } | null)?.handle === "function";
+  if (isApp) return app;
+  const got =
+    app instanceof Promise || typeof (app as { then?: unknown } | null)?.then === "function"
+      ? "a Promise — make it synchronous; async plugins are awaited for you"
+      : app === null || typeof app !== "object"
+        ? String(app === null ? "null" : typeof app === "undefined" ? "undefined" : typeof app)
+        : "an object without handle()";
+  throw new Error(`featherTest: createApp must return an Elysia app synchronously (got ${got})`);
+}
+
 /** bun:test's { test, afterAll }, loaded only when no runner is given. */
 function bunRunner(): Runner {
   const require = createRequire(import.meta.url);
@@ -546,12 +559,12 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
     app:
       options.db === undefined
         ? async ({ createApp }: { createApp: (deps: object) => App }, use: (app: App) => Promise<void>) => {
-            const app = createApp({});
+            const app = checkedApp(createApp({}));
             await app.modules; // async plugins (.use(import(...)), .use(promise)) finish loading first
             await use(app);
           }
         : async ({ createApp, db }: { createApp: (deps: { db: Db }) => App; db: Db }, use: (app: App) => Promise<void>) => {
-            const app = createApp({ db });
+            const app = checkedApp(createApp({ db }));
             await app.modules; // async plugins finish loading first
             await use(app);
           },
