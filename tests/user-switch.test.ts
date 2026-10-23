@@ -32,3 +32,25 @@ for (const first of domains) {
     });
   }
 }
+
+test.with({
+  // Two sid cookies in one result: the last one wins, as in a browser jar.
+  mintSession: async ({ db, user }: { db: AppDb; user: { id: number } }): Promise<SessionCookie[]> => {
+    const other = await users.insert(db, { name: "Mallory" });
+    const old = await startSession(db, other.id);
+    const fresh = await startSession(db, user.id);
+    return [
+      { name: SESSION_COOKIE, value: old.token },
+      { name: SESSION_COOKIE, value: fresh.token, domain: "LOCALHOST" },
+    ];
+  },
+})("duplicate cookies in one mintSession result: the last wins everywhere", async ({ db, logInAs, api, request, session, auth }) => {
+  const signedIn = await logInAs(await users.insert(db, { name: "Alice" }));
+  expect(auth.cookies).toHaveLength(1);
+  expect(signedIn.cookies).toHaveLength(1);
+  expect((await api.api.me.get()).data).toMatchObject({ name: "Alice" });
+  expect((await signedIn.api.api.me.get()).data).toMatchObject({ name: "Alice" });
+  await request.visit("/api/me").assertText("Alice");
+  await signedIn.request.visit("/api/me").assertText("Alice");
+  await session.visit("/").assertText("Alice's todos");
+});

@@ -163,9 +163,8 @@ class AuthState {
   /** The cookies change only once every applier has accepted them. */
   async logIn(cookies: SessionCookie[]): Promise<void> {
     for (const apply of this.appliers) await apply(cookies);
-    const key = (c: SessionCookie) => `${c.name}\u0000${effectiveDomain(c)}\u0000${c.path ?? "/"}`;
-    const replaced = new Set(cookies.map(key));
-    this.cookies = [...this.cookies.filter((c) => !replaced.has(key(c))), ...cookies];
+    const replaced = new Set(cookies.map(cookieKey));
+    this.cookies = [...this.cookies.filter((c) => !replaced.has(cookieKey(c))), ...cookies];
   }
 }
 
@@ -180,6 +179,11 @@ const APP_ORIGIN = "http://localhost";
  */
 function effectiveDomain(cookie: SessionCookie, appHost = new URL(APP_ORIGIN).hostname): string {
   return (cookie.domain ?? appHost).replace(/^\./, "").toLowerCase();
+}
+
+/** A cookie's identity: name, effective domain, path. */
+function cookieKey(cookie: SessionCookie): string {
+  return `${cookie.name}\u0000${effectiveDomain(cookie)}\u0000${cookie.path ?? "/"}`;
 }
 
 /**
@@ -291,7 +295,15 @@ function toCookies(minted: unknown): SessionCookie[] {
       );
     }
   }
-  return cookies.map((cookie) => ({ ...cookie }));
+  // The same cookie twice (same name, path and effective domain): the
+  // last one wins, as it would in a browser's jar.
+  const last = new Map<string, SessionCookie>();
+  for (const cookie of cookies as SessionCookie[]) {
+    const key = cookieKey(cookie);
+    last.delete(key);
+    last.set(key, { ...cookie });
+  }
+  return [...last.values()];
 }
 
 /** feather-testing-postgres's fixtures (an optional peer, loaded only when a db is configured). */
