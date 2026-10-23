@@ -24,8 +24,8 @@ for (const first of domains) {
       await logInAs(await users.insert(db, { name: "Alice" }));
       await logInAs(await users.insert(db, { name: "Bob" }));
       expect(auth.cookies).toHaveLength(1);
-      expect((await api.api.me.get()).data).toMatchObject({ name: "Bob" });
-      await request.visit("/api/me").assertText("Bob").refuteText("Alice");
+      expect((await api.me.get()).data).toMatchObject({ name: "Bob" });
+      await request.visit("/me").assertText("Bob").refuteText("Alice");
       await session.visit("/").assertText("Bob's todos");
       const sent = await page.context().cookies("http://localhost/");
       expect(sent.filter((c) => c.name === SESSION_COOKIE)).toHaveLength(1);
@@ -48,10 +48,10 @@ test.with({
   const signedIn = await logInAs(await users.insert(db, { name: "Alice" }));
   expect(auth.cookies).toHaveLength(1);
   expect(signedIn.cookies).toHaveLength(1);
-  expect((await api.api.me.get()).data).toMatchObject({ name: "Alice" });
-  expect((await signedIn.api.api.me.get()).data).toMatchObject({ name: "Alice" });
-  await request.visit("/api/me").assertText("Alice");
-  await signedIn.request.visit("/api/me").assertText("Alice");
+  expect((await api.me.get()).data).toMatchObject({ name: "Alice" });
+  expect((await signedIn.api.me.get()).data).toMatchObject({ name: "Alice" });
+  await request.visit("/me").assertText("Alice");
+  await signedIn.request.visit("/me").assertText("Alice");
   await session.visit("/").assertText("Alice's todos");
 });
 

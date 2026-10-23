@@ -27,7 +27,7 @@ secondLoginExpires(1e15)(
     );
 
     await session.visit("/").assertText("Alice's todos");
-    expect((await api.api.me.get()).data).toMatchObject({ name: "Alice" });
+    expect((await api.me.get()).data).toMatchObject({ name: "Alice" });
     await request.visit("/").assertText("Alice's todos");
   },
 );
@@ -53,7 +53,7 @@ secondLoginExpires(-1)(
     context.addCookies = realAdd;
 
     await session.visit("/").assertText("Alice's todos");
-    expect((await api.api.me.get()).data).toMatchObject({ name: "Alice" });
+    expect((await api.me.get()).data).toMatchObject({ name: "Alice" });
     await request.visit("/").assertText("Alice's todos");
   },
 );
@@ -103,7 +103,7 @@ secondLoginExpires(-1)(
     const sids = (await context.cookies()).filter((c) => c.name === SESSION_COOKIE);
     expect(sids.map((c) => c.value)).toEqual([aliceValue]);
     await session.visit("/").assertText("Alice's todos");
-    expect((await api.api.me.get()).data).toMatchObject({ name: "Alice" });
+    expect((await api.me.get()).data).toMatchObject({ name: "Alice" });
     await request.visit("/").assertText("Alice's todos");
   },
 );

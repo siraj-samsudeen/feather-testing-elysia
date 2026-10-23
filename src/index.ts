@@ -111,7 +111,7 @@ export interface DbOptions {
   /** Postgres engine: default DATABASE_URL. */
   url?: string;
   driver?: "bun" | "postgres-js";
-  /** A drizzle-kit migrations folder, applied once per file. */
+  /** A drizzle-kit migrations folder, relative to the working directory (where bun test runs), applied once per file. */
   migrations?: string;
   setup?: (sql: SqlRunner) => unknown;
   /** Passed to drizzle(), enabling db.query.<table>. */
@@ -169,7 +169,7 @@ export interface ElysiaFixtures<App extends AnyElysia, Db, User> {
    * and request / api clients of their own, for tests with several users.
    */
   logInAs: (user: User) => Promise<SignedIn<App>>;
-  /** The cookies of the latest logInAs, which session, request and api start with. */
+  /** Read-only diagnostics: the cookies of the latest logInAs, which session, request and api use. Sign in with logInAs. */
   auth: { readonly cookies: readonly SessionCookie[] };
   /** A Playwright session on the app's baseUrl, signed in by logInAs. */
   session: PlaywrightSession;

@@ -46,8 +46,8 @@ export function createApp({ db }: { db: AppDb }) {
       return page(`<h1>${escape(currentUser.name)}'s todos</h1>
 <ul class="todo-list">${mine.map((todo) => `<li>${escape(todo.title)}</li>`).join("")}</ul>`);
     })
-    .get("/api/me", ({ currentUser, status }) => currentUser ?? status(401, { error: "not signed in" }))
-    .get("/api/todos", async ({ currentUser, status }) => {
+    .get("/me", ({ currentUser, status }) => currentUser ?? status(401, { error: "not signed in" }))
+    .get("/todos", async ({ currentUser, status }) => {
       if (!currentUser) return status(401, { error: "not signed in" });
       return db
         .select({ id: todos.id, title: todos.title, completed: todos.completed })

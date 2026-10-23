@@ -9,8 +9,8 @@ test("happy-dom really is unloadable here", async ({}) => {
 
 test("logInAs + api without happy-dom", async ({ db, logInAs, api }) => {
   const signedIn = await logInAs(await users.insert(db, { name: "Alice" }));
-  expect((await api.api.me.get()).data).toMatchObject({ name: "Alice" });
-  expect((await signedIn.api.api.me.get()).data).toMatchObject({ name: "Alice" });
+  expect((await api.me.get()).data).toMatchObject({ name: "Alice" });
+  expect((await signedIn.api.me.get()).data).toMatchObject({ name: "Alice" });
 });
 
 test("logInAs + session without happy-dom", async ({ db, logInAs, session }) => {

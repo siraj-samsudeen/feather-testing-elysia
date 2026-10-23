@@ -18,7 +18,7 @@ test("logInAs signs in the test's request session", async ({ db, logInAs, reques
 test("logInAs signs in the test's api client", async ({ db, logInAs, api }) => {
   const alice = await users.insert(db, { name: "Alice" });
   await logInAs(alice);
-  const { data } = await api.api.me.get();
+  const { data } = await api.me.get();
   expect(data).toMatchObject({ name: "Alice" });
 });
 
@@ -32,14 +32,14 @@ test("logInAs returns the cookies and signed-in clients of their own", async ({ 
   expect(asAlice.cookies).toEqual([expect.objectContaining({ name: "sid", httpOnly: true })]);
   await asAlice.request.visit("/").assertText("Alice's errand").refuteText("Bob's errand");
   await asBob.request.visit("/").assertText("Bob's errand").refuteText("Alice's errand");
-  expect((await asBob.api.api.me.get()).data).toMatchObject({ name: "Bob" });
+  expect((await asBob.api.me.get()).data).toMatchObject({ name: "Bob" });
   expect(app.server).toBeNull(); // all in-process
 });
 
 test("the latest logInAs wins for the test's own clients", async ({ db, logInAs, api }) => {
   await logInAs(await users.insert(db, { name: "Alice" }));
   await logInAs(await users.insert(db, { name: "Bob" }));
-  expect((await api.api.me.get()).data).toMatchObject({ name: "Bob" });
+  expect((await api.me.get()).data).toMatchObject({ name: "Bob" });
 });
 
 test("logInAs after the browser session's first step adds the cookie to its context", async ({ db, logInAs, session }) => {
@@ -97,7 +97,7 @@ test("a login whose browser step fails changes nobody's identity", async ({ db, 
   await expect(logInAs(bob)).rejects.toThrow();
 
   expect(auth.cookies).toEqual(before);
-  expect((await api.api.me.get()).data).toMatchObject({ name: "Alice" });
+  expect((await api.me.get()).data).toMatchObject({ name: "Alice" });
   await request.visit("/").assertText("Alice's todos");
 });
 
@@ -117,7 +117,7 @@ test("overlapping logins: the last one started wins everywhere", async ({ db, lo
   await Promise.all([logInAs(alice), logInAs(bob)]);
 
   expect(auth.cookies).toHaveLength(1);
-  expect((await api.api.me.get()).data).toMatchObject({ name: "Bob" });
+  expect((await api.me.get()).data).toMatchObject({ name: "Bob" });
   await request.visit("/").assertText("Bob's todos");
   await session.visit("/").assertText("Bob's todos");
   expect((await page.context().cookies()).filter((c) => c.name === "sid")).toHaveLength(1);
@@ -153,7 +153,7 @@ test.with({
   const [first, second] = await Promise.allSettled([logInAs(alice), logInAs(bob)]);
   expect(first.status).toBe("rejected");
   expect(second.status).toBe("fulfilled");
-  expect((await api.api.me.get()).data).toMatchObject({ name: "Bob" });
+  expect((await api.me.get()).data).toMatchObject({ name: "Bob" });
 });
 
 {
@@ -179,6 +179,6 @@ test.with({
     ]);
     expect(String(nestedError)).toContain("logInAs was called from inside mintSession");
     await logInAs(await users.insert(db, { name: "Bob" }));
-    expect((await api.api.me.get()).data).toMatchObject({ name: "Bob" });
+    expect((await api.me.get()).data).toMatchObject({ name: "Bob" });
   });
 }

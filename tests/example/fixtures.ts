@@ -11,7 +11,7 @@ export const test = featherTest({
   // Sign a user in the way POST /login does, minus the password form.
   mintSession: async ({ db, user }: { db: AppDb; user: { id: number } }) => {
     const { token, expiresAt } = await startSession(db, user.id);
-    return { name: SESSION_COOKIE, value: token, httpOnly: true, expires: expiresAt.getTime() / 1000 };
+    return { name: SESSION_COOKIE, value: token, httpOnly: true, expires: Math.floor(expiresAt.getTime() / 1000) };
   },
 });
 

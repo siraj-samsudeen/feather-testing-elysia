@@ -29,7 +29,7 @@ for (const which of ["request", "session"] as const) {
     await running;
 
     expect(auth.cookies).toEqual(before);
-    expect((await api.api.me.get()).data).toMatchObject({ name: "Alice" });
+    expect((await api.me.get()).data).toMatchObject({ name: "Alice" });
     await request.visit("/whoami-slow").assertText("arrived as Alice");
     await session.visit("/whoami-slow").assertText("arrived as Alice");
   });
@@ -43,7 +43,7 @@ for (const which of ["request", "session"] as const) {
     );
     await login;
 
-    expect((await api.api.me.get()).data).toMatchObject({ name: "Bob" });
+    expect((await api.me.get()).data).toMatchObject({ name: "Bob" });
     // The refused steps were dropped, not left queued for the next await.
     await chain.visit("/whoami-slow").assertText("arrived as Bob");
     await chain.assertPath("/whoami-slow");
@@ -107,7 +107,7 @@ withSlowWhoami("awaited steps and logins in turn work as usual", async ({ db, lo
     await logInAs(await users.insert(db, { name: "Alice" }));
     await done;
     expect(outcome).toBe("logged in");
-    expect((await api.api.me.get()).data).toMatchObject({ name: "Bob" });
+    expect((await api.me.get()).data).toMatchObject({ name: "Bob" });
   });
 }
 
@@ -157,6 +157,6 @@ for (const kind of ["sync", "async"] as const) {
     };
     await logInAs(await insert(db, "Alice"));
     expect(await outcome).toBe("logged in");
-    expect((await api.api.me.get()).data).toMatchObject({ name: "Bob" });
+    expect((await api.me.get()).data).toMatchObject({ name: "Bob" });
   });
 }

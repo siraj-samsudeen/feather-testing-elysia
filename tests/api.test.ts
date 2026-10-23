@@ -8,7 +8,7 @@ import * as schema from "./example/schema.ts";
 const test = featherTest({ createApp, db: { migrations: "./tests/example/drizzle", schema } });
 
 test("api calls the app in-process, typed from its routes", async ({ api, app }) => {
-  const { data, error, status } = await api.api.me.get();
+  const { data, error, status } = await api.me.get();
   expect(status).toBe(401);
   expect(data).toBeNull();
   expect(error?.value).toEqual({ error: "not signed in" });
@@ -19,6 +19,6 @@ test("api sees the test's rows", async ({ api, db }) => {
   const [ada] = await db.insert(schema.users).values({ email: "ada@example.com", name: "Ada", passwordHash: "x" }).returning();
   await db.insert(schema.todos).values({ userId: ada!.id, title: "Buy milk" });
   const { token } = await startSession(db, ada!.id);
-  const { data } = await api.api.todos.get({ headers: { cookie: `sid=${token}` } });
+  const { data } = await api.todos.get({ headers: { cookie: `sid=${token}` } });
   expect(data?.map((todo) => todo.title)).toEqual(["Buy milk"]);
 });

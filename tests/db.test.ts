@@ -27,7 +27,7 @@ test("each test starts empty: the last one rolled back", async ({ db }) => {
 test("the app gets the test's db, so it sees rows the test inserted", async ({ db, handler }) => {
   const [ada] = await insertAda(db);
   const { token } = await startSession(db, ada!.id);
-  const response = await handler(new Request("http://localhost/api/me", { headers: { cookie: `sid=${token}` } }));
+  const response = await handler(new Request("http://localhost/me", { headers: { cookie: `sid=${token}` } }));
   expect(await response.json()).toMatchObject({ name: "Ada" });
 });
 

@@ -61,10 +61,10 @@ import * as schema from "../src/schema";
 
 export const test = featherTest({
   createApp,                                          // called as createApp({ db })
-  db: { migrations: "./drizzle", schema },            // engine from FEATHER_DB: pglite (default) or postgres
+  db: { migrations: "./drizzle", schema },            // migrations: relative to the working directory; engine from FEATHER_DB
   mintSession: async ({ db, user }: { db: AppDb; user: { id: number } }) => {
     const { token, expiresAt } = await startSession(db, user.id); // the app's own session code
-    return { name: SESSION_COOKIE, value: token, httpOnly: true, expires: expiresAt.getTime() / 1000 };
+    return { name: SESSION_COOKIE, value: token, httpOnly: true, expires: Math.floor(expiresAt.getTime() / 1000) };
   },
 });
 
@@ -95,7 +95,7 @@ test("the same, without a browser", async ({ db, logInAs, request }) => {
 
 test("the JSON API", async ({ db, logInAs, api }) => {
   await logInAs(await users.insert(db));
-  const { data } = await api.api.todos.get();          // Eden Treaty, typed from the app's routes
+  const { data } = await api.todos.get();          // Eden Treaty, typed from the app's routes
   expect(data).toEqual([]);
 });
 ```
@@ -142,7 +142,7 @@ withFakeMailer("sends the welcome email", async ({ request }) => { /* … */ });
 
 | Fixture | Scope | Default | Override |
 |---|---|---|---|
-| `app` | test | `createApp({ db })`, or `createApp({})` without a db, after its async plugins load (`await app.modules`). Never listens unless `baseUrl` is asked for | `test.with({ createApp })` |
+| `app` | test | `createApp({ db })`, or `createApp({})` without a db, after its async plugins load (`await app.modules`). Never listens unless `baseUrl` is asked for; `createApp` must not call `listen()` itself | `test.with({ createApp })` |
 | `handler` | test | `(req) => app.handle(req)` | `.with({ handler })` |
 | `baseUrl` | test | `app.listen(0)` → `http://localhost:<port>`; `app.stop()` after. Only when a test (or `session`) asks for it: a request-only test never opens a port | `.with({ baseUrl: "http://…" })` to point at another server |
 | `session` | test | A Playwright session (core's adapter) on `page`, `baseUrl` preset, signed in by `logInAs` (each login is added to its browser context at once, so the latest login wins) | `.with({ headed, record, browserName, slowMo })` |
@@ -153,7 +153,7 @@ withFakeMailer("sends the welcome email", async ({ request }) => { /* … */ });
 | `sql` | test | Raw SQL (tagged template, `sql.unsafe`) on the same transaction | |
 | `testDb`, `dbEngine` | test, file | feather-testing-postgres's `{ db, sql, raw }` and the started engine (started and migrated once per file, closed after) | |
 | `browser`, `context`, `page`, `rtl` | file, test, test, test | Core's: Chromium launched once per file when first needed; a fresh context and page per test | `.with({ browserName, headed, record, outputDir })` |
-| `auth` | test | The cookies of the latest `logInAs` (what `session`, `request` and `api` start with) | |
+| `auth` | test | Read-only diagnostics: `auth.cookies`, the cookies of the latest `logInAs` (what `session`, `request` and `api` use). Sign in with `logInAs`, never by changing it | |
 
 Options (plain values, overridable with `.with()`): `createApp`, `mintSession`, and core's `browserName` (`"chromium"`), `headed` (`HEADED=1`), `slowMo` (700 when headed), `record` (`"on"` with `RECORD=1`, else `"off"`; or `"on-failure"`), `outputDir` (`"test-results"`).
 
@@ -185,7 +185,7 @@ interface SessionCookie {            // core's, re-exported here (Playwright's s
 `await logInAs(user)`:
 
 1. calls `mintSession({ db, user, app })`;
-2. signs in the test's own `session`, `request` and `api` with those cookies. The browser `session` gets them in its context immediately, so the latest login wins, even over steps already queued. `request` gets them in its jar at once through core's `setCookies`. So every client switches at the same moment, even for steps already queued. If any step of the login fails, none of them switches;
+2. signs in the test's own `session`, `request` and `api` with those cookies. The browser `session` gets them in its context and `request` in its jar (core's `setCookies`), at once, so every client switches at the same moment, even for steps already queued. If any step of the login fails, none of them switches;
 3. returns `{ cookies, request, api }`: that user's cookies, plus a fresh request session and Eden client of their own. Use them for several users in one test:
 
 ```ts
@@ -202,7 +202,7 @@ Without `mintSession`, `logInAs` throws, naming the option.
 
 ## `api`
 
-`api` is an `@elysiajs/eden` Treaty client on the app: calls go straight to `app.handle` (addressed as `http://localhost`, like `request`), with no port and no HTTP, and are typed from the app's routes (`api.api.todos.get()` → `{ data, error, status }`). After `logInAs`, it sends the signed-in cookies the way a browser would: only those whose domain and path match the call, not expired, and `Secure` ones only over https or to localhost. A `cookie` header the call sets itself wins. It does not keep cookies the app sets in responses (it is not a cookie jar). Use `request` for flows that log in through a form.
+`api` is an `@elysiajs/eden` Treaty client on the app: calls go straight to `app.handle` (addressed as `http://localhost`, like `request`), with no port and no HTTP, and are typed from the app's routes (`api.todos.get()` → `{ data, error, status }`). After `logInAs`, it sends the signed-in cookies the way a browser would: only those whose domain and path match the call, not expired, and `Secure` ones only over https or to localhost. A `cookie` header the call sets itself wins. It does not keep cookies the app sets in responses (it is not a cookie jar). Use `request` for flows that log in through a form.
 
 ## Rules
 

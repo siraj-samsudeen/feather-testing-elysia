@@ -17,12 +17,12 @@ test("the JSON API answers for the signed-in user", async ({ db, logInAs, api })
 
   await logInAs(alice);
 
-  const { data } = await api.api.todos.get();
+  const { data } = await api.todos.get();
   expect(data).toEqual([{ id: expect.any(Number), title: "Buy milk", completed: false }]);
 });
 
 test("signed out, the API refuses", async ({ api }) => {
-  const { status } = await api.api.todos.get();
+  const { status } = await api.todos.get();
   expect(status).toBe(401);
 });
 
