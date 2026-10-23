@@ -12,12 +12,14 @@
  * A test destructures what it needs; only that (and what it depends on) is
  * set up, and everything is torn down after the test, even when it fails.
  */
-import { AsyncLocalStorage } from "node:async_hooks";
 import { createRequire } from "node:module";
 import { treaty, type Treaty } from "@elysiajs/eden";
 import type { AnyElysia } from "elysia";
 import { Session, type SessionCookie } from "feather-testing-core";
 import { cookieHeaderFor } from "feather-testing-core/cookies";
+import { AuthState, insideMintSession, minting, type MintToken } from "./auth";
+import { browserLogin } from "./browser-login";
+import { APP_ORIGIN, toCookies } from "./cookies";
 import {
   defineCoreTest,
   FixtureValue,
@@ -191,105 +193,6 @@ export type FeatherFixtures<App extends AnyElysia, Db, User = unknown> = Omit<
 > &
   ElysiaFixtures<App, Db, User>;
 
-/** The cookies the test is signed in with, and who to tell when they change. */
-class AuthState {
-  cookies: SessionCookie[] = [];
-  private tail: Promise<unknown> = Promise.resolve();
-
-  /** Run `login` after every login started before it has settled (passed or failed). */
-  serialize<T>(login: () => Promise<T>): Promise<T> {
-    const run = this.tail.then(login);
-    this.tail = run.catch(() => undefined);
-    return run;
-  }
-
-  /** Chains of the test's session and request that are running now, by which. */
-  private running = new Map<Promise<unknown>, "session" | "request">();
-
-  /** Logins started and not yet settled (passed or failed). */
-  private logins = 0;
-
-  beginLogin(): void {
-    this.logins++;
-  }
-
-  endLogin(): void {
-    this.logins--;
-  }
-
-  /**
-   * The rule: await your steps before logInAs, and await logInAs before
-   * your next steps. logInAs calls this first: it refuses while a chain of
-   * the test's session or request is running, naming which.
-   */
-  refuseWhileRunning(): void {
-    const which = [...new Set(this.running.values())].sort();
-    if (which.length > 0) {
-      throw new Error(
-        `logInAs needs your ${which.join(" and ")} steps to be finished — await them before logging in.`,
-      );
-    }
-  }
-
-  /**
-   * Record when a chain of `session` runs (await, then() and run() all go
-   * through run()). A chain started while a login is in progress refuses
-   * at once (unless mintSession itself started it), and its queued steps
-   * are dropped so they don't run on the next await.
-   */
-  track<S extends { run(): Promise<void>; discard(): number }>(session: S, which: "session" | "request"): S {
-    const run = session.run.bind(session);
-    session.run = () => {
-      if (this.logins > 0 && !insideMintSession()) {
-        session.discard(); // drop the refused steps, so they don't run on the next await
-        return Promise.reject(
-          new Error(`${which} steps were started while logInAs(…) was in progress — await logInAs first.`),
-        );
-      }
-      const chain = run();
-      this.running.set(chain, which);
-      const done = () => void this.running.delete(chain);
-      chain.then(done, done);
-      return chain;
-    };
-    return session;
-  }
-
-  /** Phase 1, may fail: e.g. add the cookies to a live browser context. */
-  prepare: ((cookies: SessionCookie[]) => Promise<void>)[] = [];
-  /** Phase 2, after every prepare succeeded: must not fail (e.g. put the cookies in the request's jar). */
-  commit: ((cookies: SessionCookie[]) => void | Promise<void>)[] = [];
-
-  /**
-   * Two-phase: if any prepare step fails, the login is refused and nothing
-   * else changes (auth, api, request keep the previous user).
-   */
-  async logIn(cookies: SessionCookie[]): Promise<void> {
-    for (const prepare of this.prepare) await prepare(cookies);
-    const replaced = new Set(cookies.map(cookieKey));
-    this.cookies = [...this.cookies.filter((c) => !replaced.has(cookieKey(c))), ...cookies];
-    for (const commit of this.commit) await commit(cookies);
-  }
-}
-
-/** The origin in-process clients address the app on: the request adapter's default baseUrl. */
-const APP_ORIGIN = "http://localhost";
-
-/**
- * The domain a cookie lands on, as core's request jar resolves it: no
- * domain means the app's host; case and a leading dot don't matter. Two
- * cookies with the same name, path and effective domain are the same
- * cookie, so a later login replaces an earlier one.
- */
-function effectiveDomain(cookie: SessionCookie, appHost = new URL(APP_ORIGIN).hostname): string {
-  return (cookie.domain ?? appHost).replace(/^\./, "").toLowerCase();
-}
-
-/** A cookie's identity: name, effective domain, path. */
-function cookieKey(cookie: SessionCookie): string {
-  return `${cookie.name}\u0000${effectiveDomain(cookie)}\u0000${cookie.path ?? "/"}`;
-}
-
 /**
  * An Eden Treaty client that calls app.handle in-process on APP_ORIGIN,
  * adding the cookies that match each request's URL (a cookie header the
@@ -336,85 +239,6 @@ function lazySession<T extends object>(proto: object, make: () => T, created: ()
   });
 }
 
-/**
- * A negative `expires` (-1 in Playwright's cookies) means a session cookie.
- * Leave it out before handing cookies to Playwright, which accepts no
- * negative but -1. (Core's request jar reads any negative as a session cookie.)
- */
-function asSessionCookies(cookies: readonly SessionCookie[]): SessionCookie[] {
-  return cookies.map(({ expires, ...rest }) => (expires !== undefined && expires >= 0 ? { ...rest, expires } : rest));
-}
-
-/** Core's cookie rule for Playwright: without a domain, set for baseUrl's host by domain + path. */
-function forPlaywright(cookies: SessionCookie[], baseUrl: string) {
-  const origin = new URL(baseUrl);
-  return asSessionCookies(cookies).map(({ domain, path, ...rest }) => {
-    if (domain !== undefined) return { ...rest, domain, path: path ?? "/" };
-    // domain + path, not url: a url makes Playwright take `secure` from its
-    // scheme, overriding the cookie's own (as core's addCookies does).
-    return { ...rest, domain: origin.hostname, path: path ?? "/" };
-  });
-}
-
-/** 9999-12-31T23:59:59Z in seconds: a later `expires` is not seconds since the epoch. */
-const MAX_EXPIRES_SECONDS = 253_402_300_799;
-
-/**
- * Refuse a cookie no client would take, before anything changes, so a bad
- * mintSession result never half-applies a login.
- */
-function validateCookie(cookie: SessionCookie): void {
-  const bad = (problem: string) =>
-    new Error(`logInAs: mintSession's cookie '${cookie.name}' ${problem}`);
-  if (cookie.name === "" || /[\s;=,\x00-\x1f\x7f]/.test(cookie.name)) {
-    throw bad("has an invalid name: it must be non-empty, without spaces, ';', '=' or ','.");
-  }
-  if (/[;\x00-\x1f\x7f]/.test(cookie.value)) {
-    throw bad("has an invalid value: it must not contain ';' or control characters.");
-  }
-  if (cookie.expires !== undefined) {
-    if (typeof cookie.expires !== "number" || !Number.isFinite(cookie.expires)) {
-      throw bad(`has expires ${String(cookie.expires)}: give seconds since the epoch, -1 (or none) for a session cookie.`);
-    }
-    if (cookie.expires > MAX_EXPIRES_SECONDS) {
-      throw bad(
-        `has expires ${cookie.expires}, which looks like milliseconds: expires is in seconds since the epoch, ` +
-          "e.g. Math.floor(date.getTime() / 1000).",
-      );
-    }
-  }
-  if (cookie.domain !== undefined && (typeof cookie.domain !== "string" || cookie.domain.replace(/^\./, "") === "")) {
-    throw bad("has an empty domain: leave domain out for a host-only cookie.");
-  }
-  if (cookie.path !== undefined && (typeof cookie.path !== "string" || !cookie.path.startsWith("/"))) {
-    throw bad(`has path ${JSON.stringify(cookie.path)}: a path starts with '/'.`);
-  }
-  if (cookie.sameSite !== undefined && !["Strict", "Lax", "None"].includes(cookie.sameSite)) {
-    throw bad(`has sameSite ${JSON.stringify(cookie.sameSite)}: use "Strict", "Lax" or "None".`);
-  }
-}
-
-function toCookies(minted: unknown): SessionCookie[] {
-  const cookies = Array.isArray(minted) ? minted : [minted];
-  for (const cookie of cookies) {
-    if (!cookie || typeof cookie.name !== "string" || typeof cookie.value !== "string") {
-      throw new Error(
-        `logInAs: mintSession must return { name, value, ... } or an array of them; got ${JSON.stringify(minted)}.`,
-      );
-    }
-    validateCookie(cookie as SessionCookie);
-  }
-  // The same cookie twice (same name, path and effective domain): the
-  // last one wins, as it would in a browser's jar.
-  const last = new Map<string, SessionCookie>();
-  for (const cookie of cookies as SessionCookie[]) {
-    const key = cookieKey(cookie);
-    last.delete(key);
-    last.set(key, { ...cookie });
-  }
-  return [...last.values()];
-}
-
 /** feather-testing-postgres's fixtures (an optional peer, loaded only when a db is configured). */
 function postgresFixtures<Db>(db: DbOptions | FeatherDbLike<Db>): Record<string, unknown> {
   const require = createRequire(import.meta.url);
@@ -434,32 +258,6 @@ function postgresFixtures<Db>(db: DbOptions | FeatherDbLike<Db>): Record<string,
 /** Core's request adapter, loaded synchronously on first use (it needs happy-dom). */
 function loadRequestAdapter(): typeof import("feather-testing-core/request") {
   return createRequire(import.meta.url)("feather-testing-core/request");
-}
-
-/**
- * Marks the async context of a mintSession call with a per-call token,
- * active only until that call settles: tasks it leaves behind (a timer, an
- * unawaited promise) keep the token but not the exemptions.
- */
-interface MintToken {
-  active: boolean;
-  /** The mintSession call's promise, when it returned one. */
-  pending?: Promise<unknown>;
-}
-const minting = new AsyncLocalStorage<MintToken>();
-
-/**
- * Inside a mintSession call that has not settled yet. A microtask the mint
- * queued on its way out runs before any await after the call can switch
- * the token off, so with a promise, ask whether it has already settled
- * (Bun.peek.status; elsewhere the finally after the await is the fallback).
- */
-function insideMintSession(): boolean {
-  const token = minting.getStore();
-  if (!token?.active) return false;
-  const peek = (globalThis as { Bun?: { peek: { status(p: Promise<unknown>): string } } }).Bun?.peek;
-  if (token.pending && peek) return peek.status(token.pending) === "pending";
-  return true;
 }
 
 /** Without the db option, db / sql / testDb / dbEngine say how to get them. */
@@ -602,59 +400,7 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
       // so the latest login always wins, even over steps already queued.
       // (Not core's cookies option: it is read when the first step runs,
       // and would re-seed an earlier user's cookies over a later login.)
-      const host = new URL(baseUrl).hostname;
-      const toContext = async (cookies: SessionCookie[]) => {
-        const context = page.context();
-        type Stored = Awaited<ReturnType<typeof context.cookies>>[number];
-        const same = (a: Stored, b: Stored) =>
-          a.name === b.name && a.domain === b.domain && a.path === b.path && a.partitionKey === b.partitionKey;
-        /** Re-add whichever of `wanted` the context no longer holds. */
-        const keep = async (wanted: Stored[]) => {
-          const now = await context.cookies();
-          const lost = wanted.filter((c) => !now.some((r) => same(r, c)));
-          if (lost.length > 0) await context.addCookies(lost);
-        };
-        // Which stored cookies this login replaces, decided before the add
-        // and by identity, whatever their value: unpartitioned, same name,
-        // path and effective domain (a host-only and a Domain cookie are two
-        // cookies to the browser, and the browser may store a domain
-        // differently from how it was given, e.g. .localhost as localhost,
-        // so where a new cookie lands can't be read back reliably). A
-        // partitioned cookie is another cookie, never replaced here.
-        const touches = (stored: Stored) =>
-          !stored.partitionKey &&
-          cookies.some(
-            (c) =>
-              c.name === stored.name &&
-              (c.path ?? "/") === stored.path &&
-              effectiveDomain(c, host) === stored.domain.replace(/^\./, "").toLowerCase(),
-          );
-        const before = await context.cookies();
-        const replaced = before.filter(touches);
-        for (const stored of replaced) {
-          await context.clearCookies({ name: stored.name, domain: stored.domain, path: stored.path });
-        }
-        // clearCookies can't filter by partition: put back what it took
-        // that was not meant to go (a partitioned twin).
-        await keep(before.filter((c) => !replaced.includes(c)));
-        try {
-          await context.addCookies(forPlaywright(cookies, baseUrl));
-        } catch (error) {
-          // The browser refused a cookie: put the previous login back, so a
-          // failed login leaves the context as it was. The add may have
-          // installed some cookies before failing (Chromium's batches have
-          // been all-or-nothing, but nothing promises it), so first clear
-          // every cookie with one of this login's identities, then restore
-          // the snapshot.
-          await (async () => {
-            for (const stored of (await context.cookies()).filter(touches)) {
-              await context.clearCookies({ name: stored.name, domain: stored.domain, path: stored.path });
-            }
-            await keep(before);
-          })().catch(() => undefined);
-          throw error;
-        }
-      };
+      const toContext = browserLogin(page, baseUrl);
       if (auth.cookies.length > 0) await toContext(auth.cookies);
       auth.prepare.push(toContext);
       await use(auth.track(createSession(page, { baseUrl }), "session"));
