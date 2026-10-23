@@ -292,6 +292,44 @@ function forPlaywright(cookies: SessionCookie[], baseUrl: string) {
   });
 }
 
+/** 9999-12-31T23:59:59Z in seconds: a later `expires` is not seconds since the epoch. */
+const MAX_EXPIRES_SECONDS = 253_402_300_799;
+
+/**
+ * Refuse a cookie no client would take, before anything changes, so a bad
+ * mintSession result never half-applies a login.
+ */
+function validateCookie(cookie: SessionCookie): void {
+  const bad = (problem: string) =>
+    new Error(`logInAs: mintSession's cookie '${cookie.name}' ${problem}`);
+  if (cookie.name === "" || /[\s;=,\x00-\x1f\x7f]/.test(cookie.name)) {
+    throw bad("has an invalid name: it must be non-empty, without spaces, ';', '=' or ','.");
+  }
+  if (/[;\x00-\x1f\x7f]/.test(cookie.value)) {
+    throw bad("has an invalid value: it must not contain ';' or control characters.");
+  }
+  if (cookie.expires !== undefined) {
+    if (typeof cookie.expires !== "number" || !Number.isFinite(cookie.expires)) {
+      throw bad(`has expires ${String(cookie.expires)}: give seconds since the epoch, -1 (or none) for a session cookie.`);
+    }
+    if (cookie.expires > MAX_EXPIRES_SECONDS) {
+      throw bad(
+        `has expires ${cookie.expires}, which looks like milliseconds: expires is in seconds since the epoch, ` +
+          "e.g. Math.floor(date.getTime() / 1000).",
+      );
+    }
+  }
+  if (cookie.domain !== undefined && (typeof cookie.domain !== "string" || cookie.domain.replace(/^\./, "") === "")) {
+    throw bad("has an empty domain: leave domain out for a host-only cookie.");
+  }
+  if (cookie.path !== undefined && (typeof cookie.path !== "string" || !cookie.path.startsWith("/"))) {
+    throw bad(`has path ${JSON.stringify(cookie.path)}: a path starts with '/'.`);
+  }
+  if (cookie.sameSite !== undefined && !["Strict", "Lax", "None"].includes(cookie.sameSite)) {
+    throw bad(`has sameSite ${JSON.stringify(cookie.sameSite)}: use "Strict", "Lax" or "None".`);
+  }
+}
+
 function toCookies(minted: unknown): SessionCookie[] {
   const cookies = Array.isArray(minted) ? minted : [minted];
   for (const cookie of cookies) {
@@ -300,6 +338,7 @@ function toCookies(minted: unknown): SessionCookie[] {
         `logInAs: mintSession must return { name, value, ... } or an array of them; got ${JSON.stringify(minted)}.`,
       );
     }
+    validateCookie(cookie as SessionCookie);
   }
   // The same cookie twice (same name, path and effective domain): the
   // last one wins, as it would in a browser's jar.
@@ -416,19 +455,24 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
       // and would re-seed an earlier user's cookies over a later login.)
       const host = new URL(baseUrl).hostname;
       const toContext = async (cookies: SessionCookie[]) => {
-        // A host-only and a Domain cookie are two cookies to the browser;
-        // drop the earlier login's one that this login replaces.
         const context = page.context();
-        for (const old of await context.cookies()) {
-          const replaced = cookies.some(
-            (c) =>
-              c.name === old.name &&
-              (c.path ?? "/") === old.path &&
-              effectiveDomain(c, host) === old.domain.replace(/^\./, "").toLowerCase(),
-          );
-          if (replaced) await context.clearCookies({ name: old.name, domain: old.domain, path: old.path });
-        }
+        // Add first: if the browser refuses a cookie, nothing has changed.
         await context.addCookies(forPlaywright(cookies, baseUrl));
+        // A host-only and a Domain cookie are two cookies to the browser, so
+        // the add may leave the earlier login's one beside the new one: drop
+        // a cookie this login replaces (same name, path, effective domain)
+        // that still holds a different value.
+        for (const stored of await context.cookies()) {
+          const replacing = cookies.find(
+            (c) =>
+              c.name === stored.name &&
+              (c.path ?? "/") === stored.path &&
+              effectiveDomain(c, host) === stored.domain.replace(/^\./, "").toLowerCase(),
+          );
+          if (replacing && replacing.value !== stored.value) {
+            await context.clearCookies({ name: stored.name, domain: stored.domain, path: stored.path });
+          }
+        }
       };
       if (auth.cookies.length > 0) await toContext(auth.cookies);
       auth.prepare.push(toContext);

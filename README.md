@@ -176,6 +176,7 @@ interface SessionCookie {            // core's, re-exported here (Playwright's s
 
 - `db` is the test's db (inside its transaction), so the session row it inserts is visible to the app and rolled back after. Without a db configured it is `undefined`.
 - Return exactly the cookie(s) your login route would set. Call the same function your login route calls (`startSession(db, user.id)` in the example) rather than duplicating it.
+- Cookies are checked before anything changes: a name with spaces or `;=,`, a value with `;`, a non-finite `expires` or one that looks like milliseconds (`expires` is seconds), a path not starting with `/`, an empty domain or an unknown `sameSite` makes `logInAs` throw, naming the cookie, and every client stays as it was.
 - Whatever `user` is (a row, an id) is up to you: `logInAs(user)` passes it through, typed from `mintSession`'s parameter.
 - With better-auth later, `mintSession` is where its session creation goes; nothing else changes.
 
