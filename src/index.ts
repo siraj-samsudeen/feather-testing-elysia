@@ -424,36 +424,47 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
       const host = new URL(baseUrl).hostname;
       const toContext = async (cookies: SessionCookie[]) => {
         const context = page.context();
-        // Add first: if the browser refuses a cookie, nothing has changed.
-        await context.addCookies(forPlaywright(cookies, baseUrl));
-        // A host-only and a Domain cookie are two cookies to the browser, so
-        // the add may leave the earlier login's one beside the new one: drop
-        // an unpartitioned cookie this login replaces (same name, path,
-        // effective domain) that still holds a different value. A
+        type Stored = Awaited<ReturnType<typeof context.cookies>>[number];
+        const same = (a: Stored, b: Stored) =>
+          a.name === b.name && a.domain === b.domain && a.path === b.path && a.partitionKey === b.partitionKey;
+        /** Re-add whichever of `wanted` the context no longer holds. */
+        const keep = async (wanted: Stored[]) => {
+          const now = await context.cookies();
+          const lost = wanted.filter((c) => !now.some((r) => same(r, c)));
+          if (lost.length > 0) await context.addCookies(lost);
+        };
+        // Which stored cookies this login replaces, decided before the add
+        // and by identity, whatever their value: unpartitioned, same name,
+        // path and effective domain (a host-only and a Domain cookie are two
+        // cookies to the browser, and the browser may store a domain
+        // differently from how it was given, e.g. .localhost as localhost,
+        // so where a new cookie lands can't be read back reliably). A
         // partitioned cookie is another cookie, never replaced here.
-        const snapshot = await context.cookies();
-        const replaced = snapshot.filter((stored) =>
-          cookies.some(
-            (c) =>
-              !stored.partitionKey &&
-              c.name === stored.name &&
-              (c.path ?? "/") === stored.path &&
-              effectiveDomain(c, host) === stored.domain.replace(/^\./, "").toLowerCase() &&
-              c.value !== stored.value,
-          ),
+        const before = await context.cookies();
+        const replaced = before.filter(
+          (stored) =>
+            !stored.partitionKey &&
+            cookies.some(
+              (c) =>
+                c.name === stored.name &&
+                (c.path ?? "/") === stored.path &&
+                effectiveDomain(c, host) === stored.domain.replace(/^\./, "").toLowerCase(),
+            ),
         );
-        if (replaced.length === 0) return;
         for (const stored of replaced) {
           await context.clearCookies({ name: stored.name, domain: stored.domain, path: stored.path });
         }
-        // clearCookies can't filter by partition (or tell a cookie from its
-        // twin), so put back whatever went that was not meant to: the new
-        // cookies themselves, partitioned cookies of the same name.
-        const remaining = await context.cookies();
-        const same = (a: (typeof snapshot)[number], b: (typeof snapshot)[number]) =>
-          a.name === b.name && a.domain === b.domain && a.path === b.path && a.partitionKey === b.partitionKey;
-        const lost = snapshot.filter((c) => !replaced.includes(c) && !remaining.some((r) => same(r, c)));
-        if (lost.length > 0) await context.addCookies(lost);
+        // clearCookies can't filter by partition: put back what it took
+        // that was not meant to go (a partitioned twin).
+        await keep(before.filter((c) => !replaced.includes(c)));
+        try {
+          await context.addCookies(forPlaywright(cookies, baseUrl));
+        } catch (error) {
+          // The browser refused a cookie: put the previous login back, so a
+          // failed login leaves the context as it was.
+          await keep(before).catch(() => undefined);
+          throw error;
+        }
       };
       if (auth.cookies.length > 0) await toContext(auth.cookies);
       auth.prepare.push(toContext);

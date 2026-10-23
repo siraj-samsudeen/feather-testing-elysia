@@ -34,15 +34,20 @@ secondLoginExpires(1e15)(
 
 secondLoginExpires(-1)(
   "the browser refusing the cookie leaves the browser as Alice",
-  async ({ db, logInAs, session, page, api, request }) => {
+  async ({ db, logInAs, session, page, api, request, auth }) => {
     call = 0;
     await logInAs(await users.insert(db, { name: "Alice" }));
     await session.visit("/").assertText("Alice's todos");
 
+    // The browser refuses Bob's cookie (and only it).
+    const aliceValue = auth.cookies[0]!.value;
     const context = page.context();
     const realAdd = context.addCookies.bind(context);
-    context.addCookies = async () => {
-      throw new Error("browser refused the cookie");
+    context.addCookies = async (list) => {
+      if (list.some((c) => c.name === SESSION_COOKIE && c.value !== aliceValue)) {
+        throw new Error("browser refused the cookie");
+      }
+      return realAdd(list);
     };
     await expect(logInAs(await users.insert(db, { name: "Bob" }))).rejects.toThrow("browser refused the cookie");
     context.addCookies = realAdd;

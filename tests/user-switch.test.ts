@@ -93,3 +93,35 @@ for (const domain of [undefined, "localhost", ".localhost"]) {
     expect(sids.filter((c) => !c.partitionKey)).toHaveLength(1);
   });
 }
+
+// Chromium folds a .localhost Domain cookie into a host-only localhost one,
+// so the two can only coexist on a real domain: example.test here.
+for (const [label, expires, left] of [
+  ["expired", () => Math.floor(Date.now() / 1000) - 3600, []],
+  ["live", () => undefined, [".example.test"]],
+] as const) {
+  let call = 0;
+  let token = "";
+  test.with({
+    // The same token both times: on example.test first, then on .example.test.
+    mintSession: async ({ db, user }: { db: AppDb; user: { id: number } }): Promise<SessionCookie> => {
+      if (call++ === 0) {
+        token = (await startSession(db, user.id)).token;
+        return { name: SESSION_COOKIE, value: token, domain: "example.test" };
+      }
+      const cookie: SessionCookie = { name: SESSION_COOKIE, value: token, domain: ".example.test" };
+      const at = expires();
+      return at === undefined ? cookie : { ...cookie, expires: at };
+    },
+  })(`a replaced cookie with the same value leaves the browser too (moved to .example.test, ${label})`, async ({ db, logInAs, session, page, auth }) => {
+    call = 0;
+    expect(session).toBeDefined();
+    const alice = await users.insert(db, { name: "Alice" });
+    await logInAs(alice);
+    await logInAs(alice);
+
+    expect(auth.cookies.map((c) => c.domain)).toEqual([".example.test"]);
+    const stored = (await page.context().cookies()).filter((c) => c.name === SESSION_COOKIE);
+    expect(stored.map((c) => c.domain)).toEqual([...left]);
+  });
+}
