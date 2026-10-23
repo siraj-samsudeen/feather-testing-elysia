@@ -16,6 +16,7 @@ import { createRequire } from "node:module";
 import { treaty, type Treaty } from "@elysiajs/eden";
 import type { AnyElysia } from "elysia";
 import { Session, type SessionCookie } from "feather-testing-core";
+import { cookieHeaderFor } from "feather-testing-core/cookies";
 import {
   defineCoreTest,
   type CoreFixtures,
@@ -192,39 +193,6 @@ function cookieKey(cookie: SessionCookie): string {
   return `${cookie.name}\u0000${effectiveDomain(cookie)}\u0000${cookie.path ?? "/"}`;
 }
 
-/**
- * The Cookie header a browser would send to `url`: the rules of core's
- * request-adapter jar (no domain: host-only for the app's host; Domain also
- * covers subdomains; Path; Secure only over https or to localhost; none or
- * negative expires: a session cookie; longer paths first).
- *
- * Core exports the same function as cookieHeaderFor from
- * feather-testing-core/request, but that entry loads happy-dom, which api
- * and logInAs must not need; switch to it once core exports it from an
- * entry without happy-dom.
- */
-function cookieHeaderFor(cookies: readonly SessionCookie[], url: URL, appHost = new URL(APP_ORIGIN).hostname): string | null {
-  const host = url.hostname.toLowerCase();
-  const now = Date.now();
-  const secureContext = url.protocol === "https:" || host === "localhost" || host === "127.0.0.1";
-  const pathMatches = (path: string) =>
-    url.pathname === path || (url.pathname.startsWith(path) && (path.endsWith("/") || url.pathname[path.length] === "/"));
-  const matching = cookies
-    .filter((c) => {
-      // A negative expires is a session cookie (Playwright's -1).
-      if (c.expires !== undefined && c.expires >= 0 && c.expires * 1000 <= now) return false;
-      if (c.secure && !secureContext) return false;
-      if (c.domain === undefined) {
-        if (host !== appHost.toLowerCase()) return false;
-      } else {
-        const domain = c.domain.replace(/^\./, "").toLowerCase();
-        if (host !== domain && !host.endsWith(`.${domain}`)) return false;
-      }
-      return pathMatches(c.path ?? "/");
-    })
-    .sort((a, b) => (b.path ?? "/").length - (a.path ?? "/").length);
-  return matching.length === 0 ? null : matching.map((c) => `${c.name}=${c.value}`).join("; ");
-}
 
 /**
  * An Eden Treaty client that calls app.handle in-process on APP_ORIGIN,
