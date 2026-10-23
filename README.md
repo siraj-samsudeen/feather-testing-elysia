@@ -119,6 +119,8 @@ Each test gets core's per-test timeout of 30 s (120 s with `HEADED=1`), enough f
 
 The package ships TypeScript source; Bun runs it as is.
 
+**TypeScript.** Use `"moduleResolution": "bundler"` (the `bun init` default) with a modern target, e.g. `"target": "ESNext"` and `"module": "Preserve"`. TypeScript's old defaults (no `module` or `moduleResolution`, an ES5 target) fail inside Elysia itself, not only here: they can't resolve packages whose entry points are declared under `exports`, and they reject `import.meta` and iterating a Set or Map. This package's source is type-checked under your settings, since it ships as TypeScript.
+
 ## `featherTest(options)`
 
 ```ts
