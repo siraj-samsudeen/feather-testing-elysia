@@ -192,7 +192,7 @@ const asBob = await logInAs(bob);           // the test's own session/request/ap
 await asAlice.request.visit("/").refuteText("Bob's errand");
 ```
 
-`logInAs` waits for running steps to finish: a `session` or `request` chain started but not yet awaited (`const p = request.visit(...).run()`) settles first, at most 10 s, so a response still on its way can't set the previous user's cookie after the login. Past 10 s, `logInAs` throws, telling you to await the chain. A chain started while a login is in progress (an unawaited `logInAs`) waits until the login has committed or failed before it sends anything, so no request is ever in flight across a login. Don't call `logInAs` from inside a step.
+**Await your steps before `logInAs`, and await `logInAs` before your next steps; anything else fails loudly.** `logInAs` refuses, before minting anything, while a `session` or `request` chain is still running (`logInAs needs your request steps to be finished — await them before logging in`). A chain started while a login is in progress refuses too (`request steps were started while logInAs(…) was in progress — await logInAs first`), and its steps are dropped. Either way nothing changes: every client stays as it was. Don't call `logInAs` from inside a step.
 
 Logins run one at a time, in the order they were called: overlapping `logInAs` calls (`Promise.all([...])`) can't interleave, and the last one started wins everywhere. A failed login doesn't block the next.
 
@@ -207,6 +207,7 @@ Without `mintSession`, `logInAs` throws, naming the option.
 - **Sequential only.** One test owns the database transaction at a time. `bun test` runs files one after another in one process, and a file's tests in order, which is what this needs. Never use `test.concurrent`; feather-testing-postgres's `beginTest()` refuses a second open test.
 - **A test must name its fixtures by destructuring** its first parameter: `async ({ db, session }) => …`. A test that needs none takes no parameter: `async () => …`. In minified code, name them: `test(name, ["session"], fn)`.
 - **One `featherTest(...)` per project**, in a shared `tests/fixtures.ts`, imported by every test file. The engine (PGlite or Postgres) is started and migrated once per file.
+- **Await your steps before `logInAs`, and await `logInAs` before your next steps.** Anything else fails loudly instead of racing; see [mintSession and logInAs](#mintsession-and-loginas).
 - **Lanes.** PGlite is the default (`FEATHER_DB` unset): nothing to install. Run a Postgres lane too, pinned to production's major version: `FEATHER_DB=postgres DATABASE_URL=postgres://… bun test`.
 
 ## Limits (v0.1)
