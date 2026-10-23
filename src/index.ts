@@ -41,9 +41,11 @@ export interface ElysiaFixtures<App extends AnyElysia, Db> {
   app: App;
   /** The app's request handler (app.handle), for the request adapter. */
   handler: RequestHandler;
+  /** The app listening on a free port (app.listen(0)), stopped after the test. Only started when asked for. */
+  baseUrl: string;
 }
 
-export type FeatherFixtures<App extends AnyElysia, Db> = Omit<CoreFixtures, "handler"> &
+export type FeatherFixtures<App extends AnyElysia, Db> = Omit<CoreFixtures, "handler" | "baseUrl"> &
   ElysiaFixtures<App, Db>;
 
 /** bun:test's { test, afterAll }, loaded only when no runner is given. */
@@ -64,6 +66,14 @@ export function featherTest<App extends AnyElysia, Db = never>(
     },
     handler: async ({ app }: { app: App }, use: (handler: RequestHandler) => Promise<void>) => {
       await use((request) => app.handle(request));
+    },
+    baseUrl: async ({ app }: { app: App }, use: (url: string) => Promise<void>) => {
+      app.listen(0);
+      try {
+        await use(`http://localhost:${app.server!.port}`);
+      } finally {
+        await app.stop();
+      }
     },
   };
   return defineCoreTest(runner).extend(
