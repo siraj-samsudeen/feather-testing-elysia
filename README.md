@@ -175,7 +175,7 @@ interface SessionCookie {            // core's cookie shape (Playwright's)
   name: string; value: string;
   domain?: string;                   // default: host-only for the app's host
   path?: string;                     // default "/"
-  expires?: number;                  // seconds since the epoch; default: a session cookie
+  expires?: number;                  // seconds since the epoch; none or negative (-1): a session cookie
   httpOnly?: boolean; secure?: boolean; sameSite?: "Strict" | "Lax" | "None";
 }
 ```

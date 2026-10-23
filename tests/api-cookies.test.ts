@@ -50,3 +50,17 @@ test("an explicit cookie header on a call wins", async ({ db, logInAs, api }) =>
   const { token } = await startSession(db, bob.id);
   expect((await api.api.me.get({ headers: { cookie: `${SESSION_COOKIE}=${token}` } })).data).toMatchObject({ name: "Bob" });
 });
+
+for (const expires of [-1, -42]) {
+  minting((value) => ({ name: SESSION_COOKIE, value, expires }))(
+    `expires ${expires} is a session cookie (as in Playwright): api, request and session are signed in`,
+    async ({ db, logInAs, api, request, session }) => {
+      const signedIn = await logInAs(await users.insert(db, { name: "Alice" }));
+      expect((await api.api.me.get()).data).toMatchObject({ name: "Alice" });
+      expect((await signedIn.api.api.me.get()).data).toMatchObject({ name: "Alice" });
+      await request.visit("/api/me").assertText("Alice");
+      await signedIn.request.visit("/api/me").assertText("Alice");
+      await session.visit("/").assertText("Alice's todos");
+    },
+  );
+}

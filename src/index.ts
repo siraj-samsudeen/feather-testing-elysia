@@ -34,7 +34,8 @@ type RequestSession = CoreFixtures["request"];
  * A cookie a session starts with — feather-testing-core's SessionCookie
  * (not exported from its entry points yet), shaped like Playwright's:
  * without `domain` it is host-only for the app's host; `expires` is in
- * seconds since the epoch.
+ * seconds since the epoch, and a negative value (Playwright's -1) or none
+ * means a session cookie.
  */
 export interface SessionCookie {
   name: string;
@@ -214,6 +215,7 @@ function cookieHeaderFor(cookies: readonly SessionCookie[], url: URL, appHost = 
     url.pathname === path || (url.pathname.startsWith(path) && (path.endsWith("/") || url.pathname[path.length] === "/"));
   const matching = cookies
     .filter((c) => {
+      // A negative expires is a session cookie (Playwright's -1).
       if (c.expires !== undefined && c.expires >= 0 && c.expires * 1000 <= now) return false;
       if (c.secure && !secureContext) return false;
       if (c.domain === undefined) {
@@ -275,9 +277,18 @@ function lazySession<T extends object>(proto: object, make: () => T, created: ()
 }
 
 /** Core's cookie rule for Playwright: without a domain, host-only for baseUrl. */
+/**
+ * A negative `expires` (-1 in Playwright's cookies) means a session cookie.
+ * Leave it out before handing cookies to core or Playwright: core 0.7.0-beta.1's
+ * request jar reads -1 as expired, and Playwright accepts no negative but -1.
+ */
+function asSessionCookies(cookies: readonly SessionCookie[]): SessionCookie[] {
+  return cookies.map(({ expires, ...rest }) => (expires !== undefined && expires >= 0 ? { ...rest, expires } : rest));
+}
+
 function forPlaywright(cookies: SessionCookie[], baseUrl: string) {
   const origin = new URL(baseUrl);
-  return cookies.map(({ domain, path, ...rest }) => {
+  return asSessionCookies(cookies).map(({ domain, path, ...rest }) => {
     if (domain !== undefined) return { ...rest, domain, path: path ?? "/" };
     return path === undefined ? { ...rest, url: `${origin.origin}/` } : { ...rest, domain: origin.hostname, path };
   });
@@ -347,7 +358,7 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
         // happy-dom, which a browser- or API-only project may not have.
         request: lazySession(
           Session.prototype,
-          () => (request ??= loadRequestAdapter().createSession((r) => app.handle(r), { cookies })),
+          () => (request ??= loadRequestAdapter().createSession((r) => app.handle(r), { cookies: asSessionCookies(cookies) })),
           () => request,
         ),
         api: apiClient(app, () => cookies),
@@ -428,7 +439,7 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
       await use(
         lazySession(
           Session.prototype,
-          () => (real ??= createSession(handler, { cookies: [...auth.cookies] })),
+          () => (real ??= createSession(handler, { cookies: asSessionCookies(auth.cookies) })),
           () => real,
         ),
       );
