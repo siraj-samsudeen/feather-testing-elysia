@@ -30,9 +30,9 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "bun test",
-    "test:pglite": "FEATHER_DB=pglite bun test",
-    "test:postgres": "FEATHER_DB=postgres DATABASE_URL=${DATABASE_URL:-postgres://postgres:postgres@127.0.0.1:5432/feather_elysia_test} bun test",
+    "test": "bun test --timeout 20000",
+    "test:pglite": "FEATHER_DB=pglite bun test --timeout 20000",
+    "test:postgres": "FEATHER_DB=postgres DATABASE_URL=${DATABASE_URL:-postgres://postgres:postgres@127.0.0.1:5432/feather_elysia_test} bun test --timeout 20000",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate --dialect postgresql --schema tests/example/schema.ts --out tests/example/drizzle",
     "prepublishOnly": "node -e \"const p=require('./package.json');const bad=Object.entries(p.devDependencies).filter(([,v])=>v.startsWith('file:'));if(bad.length){console.error('Not publishable yet: foundations are local packs:',bad.map(([k])=>k).join(', '));process.exit(1)}\""

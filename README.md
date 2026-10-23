@@ -114,13 +114,13 @@ bun add -d happy-dom                      # only for request sessions (core's re
 bun add -d feather-testing-postgres drizzle-orm @electric-sql/pglite   # for db
 ```
 
-Browser tests launch Chromium and load pages, so raise bun's per-test limit:
+Browser tests launch Chromium and load pages, and the first test of a file starts and migrates the database, so raise bun's per-test limit (5000 ms by default) on the command line:
 
-```toml
-# bunfig.toml
-[test]
-timeout = 20000
+```bash
+bun test --timeout 20000
 ```
+
+(Bun 1.4.2 ignores `timeout` under `[test]` in `bunfig.toml`; only the flag works.)
 
 The package ships TypeScript source; Bun runs it as is.
 
