@@ -184,8 +184,54 @@ class AuthState {
   }
 }
 
-const cookieHeader = (cookies: readonly SessionCookie[]): string =>
-  cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+/** The origin in-process clients address the app on: the request adapter's default baseUrl. */
+const APP_ORIGIN = "http://localhost";
+
+/**
+ * The Cookie header a browser would send to `url`, by the rules of core's
+ * request-adapter cookie jar (not exported from core): a cookie without
+ * `domain` is host-only for the app's host, a Domain cookie also matches
+ * subdomains, Path must match, Secure goes only over https or to
+ * localhost, expired cookies are left out; longer paths first.
+ */
+function cookieHeaderFor(cookies: readonly SessionCookie[], url: URL, appHost = new URL(APP_ORIGIN).hostname): string | null {
+  const host = url.hostname.toLowerCase();
+  const now = Date.now();
+  const secureContext = url.protocol === "https:" || host === "localhost" || host === "127.0.0.1";
+  const pathMatches = (path: string) =>
+    url.pathname === path || (url.pathname.startsWith(path) && (path.endsWith("/") || url.pathname[path.length] === "/"));
+  const matching = cookies
+    .filter((c) => {
+      if (c.expires !== undefined && c.expires >= 0 && c.expires * 1000 <= now) return false;
+      if (c.secure && !secureContext) return false;
+      if (c.domain === undefined) {
+        if (host !== appHost.toLowerCase()) return false;
+      } else {
+        const domain = c.domain.replace(/^\./, "").toLowerCase();
+        if (host !== domain && !host.endsWith(`.${domain}`)) return false;
+      }
+      return pathMatches(c.path ?? "/");
+    })
+    .sort((a, b) => (b.path ?? "/").length - (a.path ?? "/").length);
+  return matching.length === 0 ? null : matching.map((c) => `${c.name}=${c.value}`).join("; ");
+}
+
+/**
+ * An Eden Treaty client that calls app.handle in-process on APP_ORIGIN,
+ * adding the cookies that match each request's URL (a cookie header the
+ * call sets itself wins).
+ */
+function apiClient<App extends AnyElysia>(app: App, cookies: () => readonly SessionCookie[]): Treaty.Create<App> {
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = new Request(input, init);
+    if (!request.headers.has("cookie")) {
+      const header = cookieHeaderFor(cookies(), new URL(request.url));
+      if (header) request.headers.set("cookie", header);
+    }
+    return app.handle(request);
+  }) as typeof fetch;
+  return treaty<App>(APP_ORIGIN, { fetcher });
+}
 
 /**
  * A session created on its first DSL call (visit, fillIn, ...), so cookies
@@ -281,7 +327,7 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
       return {
         cookies,
         request: createSession((request) => app.handle(request), { cookies }),
-        api: treaty<App>(app, { headers: { cookie: cookieHeader(cookies) } }),
+        api: apiClient(app, () => cookies),
       };
     };
   const dbFixtures = options.db === undefined ? {} : postgresFixtures(options.db);
@@ -348,7 +394,7 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
       );
     },
     api: async ({ app, auth }: { app: App; auth: AuthState }, use: (api: Treaty.Create<App>) => Promise<void>) => {
-      await use(treaty<App>(app, { headers: () => (auth.cookies.length ? { cookie: cookieHeader(auth.cookies) } : undefined) }));
+      await use(apiClient(app, () => auth.cookies));
     },
     baseUrl: async ({ app }: { app: App }, use: (url: string) => Promise<void>) => {
       app.listen(0);

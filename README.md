@@ -150,7 +150,7 @@ withFakeMailer("sends the welcome email", async ({ request }) => { /* … */ });
 | `baseUrl` | test | `app.listen(0)` → `http://localhost:<port>`; `app.stop()` after. Only when a test (or `session`) asks for it: a request-only test never opens a port | `.with({ baseUrl: "http://…" })` to point at another server |
 | `session` | test | A Playwright session (core's adapter) on `page`, `baseUrl` preset, signed in by `logInAs` (each login is added to its browser context at once, so the latest login wins) | `.with({ headed, record, browserName, slowMo })` |
 | `request` | test | A request-adapter session on `handler` (no browser, in-process), signed in by `logInAs`. Created on its first DSL call | |
-| `api` | test | An Eden Treaty client, `treaty(app)`: in-process, no HTTP, typed from the app's routes; sends `logInAs`'s cookies | |
+| `api` | test | An Eden Treaty client on `app.handle`: in-process, no HTTP, typed from the app's routes; sends `logInAs`'s cookies that match each call's URL | |
 | `logInAs` | test | `(user) => Promise<{ cookies, request, api }>`, see below | `.with({ mintSession })` |
 | `db` | test | With `db` configured: the Drizzle handle on the test's transaction (`strategy: "tx"`) or cloned database (`"clone"`). The same handle `app` got | `db` option |
 | `sql` | test | Raw SQL (tagged template, `sql.unsafe`) on the same transaction | |
@@ -200,7 +200,7 @@ Without `mintSession`, `logInAs` throws, naming the option.
 
 ## `api`
 
-`api` is `treaty<App>(app)` from `@elysiajs/eden`: calls go straight to `app.handle`, with no port and no HTTP, and are typed from the app's routes (`api.api.todos.get()` → `{ data, error, status }`). After `logInAs`, it sends the signed-in cookies on every call. It does not keep cookies the app sets in responses (it is not a cookie jar). Use `request` for flows that log in through a form.
+`api` is an `@elysiajs/eden` Treaty client on the app: calls go straight to `app.handle` (addressed as `http://localhost`, like `request`), with no port and no HTTP, and are typed from the app's routes (`api.api.todos.get()` → `{ data, error, status }`). After `logInAs`, it sends the signed-in cookies the way a browser would: only those whose domain and path match the call, not expired, and `Secure` ones only over https or to localhost. A `cookie` header the call sets itself wins. It does not keep cookies the app sets in responses (it is not a cookie jar). Use `request` for flows that log in through a form.
 
 ## Rules
 
