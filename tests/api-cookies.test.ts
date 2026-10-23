@@ -64,3 +64,13 @@ for (const expires of [-1, -42]) {
     },
   );
 }
+
+minting((value) => ({ name: SESSION_COOKIE, value, secure: true }))(
+  "a host-only Secure cookie stays Secure in the browser and still signs it in on localhost",
+  async ({ db, logInAs, session, page }) => {
+    await logInAs(await users.insert(db, { name: "Alice" }));
+    const [sid] = (await page.context().cookies()).filter((c) => c.name === SESSION_COOKIE);
+    expect(sid).toMatchObject({ secure: true, domain: "localhost", path: "/" });
+    await session.visit("/").assertText("Alice's todos");
+  },
+);

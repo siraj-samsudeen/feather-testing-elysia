@@ -262,7 +262,7 @@ function lazySession<T extends object>(proto: object, make: () => T, created: ()
   });
 }
 
-/** Core's cookie rule for Playwright: without a domain, host-only for baseUrl. */
+/** Core's cookie rule for Playwright: without a domain, set for baseUrl's host by domain + path. */
 /**
  * A negative `expires` (-1 in Playwright's cookies) means a session cookie.
  * Leave it out before handing cookies to Playwright, which accepts no
@@ -276,7 +276,9 @@ function forPlaywright(cookies: SessionCookie[], baseUrl: string) {
   const origin = new URL(baseUrl);
   return asSessionCookies(cookies).map(({ domain, path, ...rest }) => {
     if (domain !== undefined) return { ...rest, domain, path: path ?? "/" };
-    return path === undefined ? { ...rest, url: `${origin.origin}/` } : { ...rest, domain: origin.hostname, path };
+    // domain + path, not url: a url makes Playwright take `secure` from its
+    // scheme, overriding the cookie's own (as core's addCookies does).
+    return { ...rest, domain: origin.hostname, path: path ?? "/" };
   });
 }
 
