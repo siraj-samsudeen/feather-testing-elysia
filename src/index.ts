@@ -15,7 +15,7 @@
 import { createRequire } from "node:module";
 import { treaty, type Treaty } from "@elysiajs/eden";
 import type { AnyElysia } from "elysia";
-import { Session } from "feather-testing-core";
+import { Session, type SessionCookie } from "feather-testing-core";
 import {
   defineCoreTest,
   type CoreFixtures,
@@ -25,28 +25,13 @@ import {
 } from "feather-testing-core/fixtures";
 
 export type { Runner, TestFn } from "feather-testing-core/fixtures";
+/** A cookie a session starts with (core's): no domain = host-only for the app's host; expires in seconds, none or negative = a session cookie. */
+export type { SessionCookie } from "feather-testing-core";
 
 type RequestHandler = (request: Request) => Response | Promise<Response>;
 type PlaywrightSession = CoreFixtures["session"];
 type RequestSession = CoreFixtures["request"];
 
-/**
- * A cookie a session starts with — feather-testing-core's SessionCookie
- * (not exported from its entry points yet), shaped like Playwright's:
- * without `domain` it is host-only for the app's host; `expires` is in
- * seconds since the epoch, and a negative value (Playwright's -1) or none
- * means a session cookie.
- */
-export interface SessionCookie {
-  name: string;
-  value: string;
-  domain?: string;
-  path?: string;
-  expires?: number;
-  httpOnly?: boolean;
-  secure?: boolean;
-  sameSite?: "Strict" | "Lax" | "None";
-}
 
 /**
  * The consumer's half of logInAs: make `user` signed in the way the app does
@@ -201,11 +186,15 @@ function effectiveDomain(cookie: SessionCookie, appHost = new URL(APP_ORIGIN).ho
 }
 
 /**
- * The Cookie header a browser would send to `url`, by the rules of core's
- * request-adapter cookie jar (not exported from core): a cookie without
- * `domain` is host-only for the app's host, a Domain cookie also matches
- * subdomains, Path must match, Secure goes only over https or to
- * localhost, expired cookies are left out; longer paths first.
+ * The Cookie header a browser would send to `url`: the rules of core's
+ * request-adapter jar (no domain: host-only for the app's host; Domain also
+ * covers subdomains; Path; Secure only over https or to localhost; none or
+ * negative expires: a session cookie; longer paths first).
+ *
+ * Core exports the same function as cookieHeaderFor from
+ * feather-testing-core/request, but that entry loads happy-dom, which api
+ * and logInAs must not need; switch to it once core exports it from an
+ * entry without happy-dom.
  */
 function cookieHeaderFor(cookies: readonly SessionCookie[], url: URL, appHost = new URL(APP_ORIGIN).hostname): string | null {
   const host = url.hostname.toLowerCase();

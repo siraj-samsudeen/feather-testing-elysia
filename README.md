@@ -165,7 +165,7 @@ Options (plain values, overridable with `.with()`): `createApp`, `mintSession`, 
 type MintSession<User, Db, App> = (args: { db: Db; user: User; app: App }) =>
   SessionCookie | SessionCookie[] | Promise<SessionCookie | SessionCookie[]>;
 
-interface SessionCookie {            // core's cookie shape (Playwright's)
+interface SessionCookie {            // core's, re-exported here (Playwright's shape)
   name: string; value: string;
   domain?: string;                   // default: host-only for the app's host
   path?: string;                     // default "/"
