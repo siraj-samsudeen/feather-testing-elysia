@@ -110,3 +110,53 @@ withSlowWhoami("awaited steps and logins in turn work as usual", async ({ db, lo
     expect((await api.api.me.get()).data).toMatchObject({ name: "Bob" });
   });
 }
+
+// A microtask a mintSession queues on its way out runs before any await
+// after it; it must not count as inside mintSession, sync or async.
+for (const kind of ["sync", "async"] as const) {
+  let task: (() => void) | undefined;
+  const tokens = new Map<number, string>();
+  const withMicrotask = test.with({
+    mintSession:
+      kind === "sync"
+        ? ({ user }: { db: AppDb; user: { id: number } }): SessionCookie => {
+            const t = task;
+            task = undefined;
+            if (t) queueMicrotask(t);
+            return { name: SESSION_COOKIE, value: tokens.get(user.id)! };
+          }
+        : async ({ db, user }: { db: AppDb; user: { id: number } }): Promise<SessionCookie> => {
+            const value = (await startSession(db, user.id)).token;
+            const t = task;
+            task = undefined;
+            if (t) queueMicrotask(t);
+            return { name: SESSION_COOKIE, value };
+          },
+  });
+  const insert = async (db: AppDb, name: string) => {
+    const user = await users.insert(db, { name });
+    tokens.set(user.id, (await startSession(db, user.id)).token); // for the sync mint
+    return user;
+  };
+
+  withMicrotask(`a microtask from a ${kind} mintSession running a chain during the login is refused`, async ({ db, logInAs, request, session }) => {
+    expect(session).toBeDefined(); // a browser step keeps the login going after the mint
+    let outcome: unknown;
+    task = () => {
+      outcome = request.visit("/").run().then(() => "ran", (error: unknown) => error);
+    };
+    await logInAs(await insert(db, "Alice"));
+    expect(String(await outcome)).toContain("started while logInAs(…) was in progress");
+  });
+
+  withMicrotask(`logInAs from a microtask a ${kind} mintSession queued is a normal login`, async ({ db, logInAs, api }) => {
+    const bob = await insert(db, "Bob");
+    let outcome: Promise<unknown> | undefined;
+    task = () => {
+      outcome = logInAs(bob).then(() => "logged in", (error: unknown) => error);
+    };
+    await logInAs(await insert(db, "Alice"));
+    expect(await outcome).toBe("logged in");
+    expect((await api.api.me.get()).data).toMatchObject({ name: "Bob" });
+  });
+}

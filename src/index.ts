@@ -408,11 +408,25 @@ function loadRequestAdapter(): typeof import("feather-testing-core/request") {
  * active only until that call settles: tasks it leaves behind (a timer, an
  * unawaited promise) keep the token but not the exemptions.
  */
-const minting = new AsyncLocalStorage<{ active: boolean }>();
+interface MintToken {
+  active: boolean;
+  /** The mintSession call's promise, when it returned one. */
+  pending?: Promise<unknown>;
+}
+const minting = new AsyncLocalStorage<MintToken>();
 
-/** Inside a mintSession call that has not settled yet. */
+/**
+ * Inside a mintSession call that has not settled yet. A microtask the mint
+ * queued on its way out runs before any await after the call can switch
+ * the token off, so with a promise, ask whether it has already settled
+ * (Bun.peek.status; elsewhere the finally after the await is the fallback).
+ */
 function insideMintSession(): boolean {
-  return minting.getStore()?.active === true;
+  const token = minting.getStore();
+  if (!token?.active) return false;
+  const peek = (globalThis as { Bun?: { peek: { status(p: Promise<unknown>): string } } }).Bun?.peek;
+  if (token.pending && peek) return peek.status(token.pending) === "pending";
+  return true;
 }
 
 /** bun:test's { test, afterAll }, loaded only when no runner is given. */
@@ -453,12 +467,25 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
       auth.beginLogin();
       return auth.serialize(async () => {
       // Everything that can fail happens before the login state changes.
-      const token = { active: true };
+      const token: MintToken = { active: true };
       let minted: SessionCookie | SessionCookie[];
+      let result: ReturnType<typeof mintSession>;
       try {
-        minted = await minting.run(token, () => mintSession({ db, user, app }));
-      } finally {
-        token.active = false;
+        result = minting.run(token, () => mintSession({ db, user, app })); // not awaited yet
+      } catch (error) {
+        token.active = false; // threw synchronously
+        throw error;
+      }
+      if (result instanceof Promise || typeof (result as { then?: unknown })?.then === "function") {
+        if (result instanceof Promise) token.pending = result;
+        try {
+          minted = await result;
+        } finally {
+          token.active = false;
+        }
+      } else {
+        token.active = false; // a plain value: the mint is over, before any await
+        minted = result as SessionCookie | SessionCookie[];
       }
       const cookies = toCookies(minted);
       let request: RequestSession | undefined;
