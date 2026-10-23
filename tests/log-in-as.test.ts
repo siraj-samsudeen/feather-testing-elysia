@@ -98,3 +98,10 @@ test("a login whose browser step fails changes nobody's identity", async ({ db, 
   expect((await api.api.me.get()).data).toMatchObject({ name: "Alice" });
   await request.visit("/").assertText("Alice's todos");
 });
+
+test("switching user between queuing and running a request step runs as the new user", async ({ db, logInAs, request }) => {
+  await logInAs(await users.insert(db, { name: "Alice" }));
+  const chain = request.visit("/"); // queued as Alice, not run yet
+  await logInAs(await users.insert(db, { name: "Bob" }));
+  await chain.assertText("Bob's todos").refuteText("Alice's todos");
+});

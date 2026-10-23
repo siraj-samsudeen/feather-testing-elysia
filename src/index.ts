@@ -126,8 +126,8 @@ export interface ElysiaFixtures<App extends AnyElysia, Db, User> {
   mintSession: MintSession<User, Db, App> | undefined;
   /**
    * Sign `user` in: mintSession({ db, user, app }) makes the cookies, and
-   * the test's own session, request and api use them from then on (the
-   * browser at once; request from its next step). Returns that user's cookies
+   * the test's own session, request and api use them from then on, at
+   * once (even for steps already queued). Returns that user's cookies
    * and request / api clients of their own, for tests with several users.
    */
   logInAs: (user: User) => Promise<SignedIn<App>>;
@@ -135,7 +135,7 @@ export interface ElysiaFixtures<App extends AnyElysia, Db, User> {
   auth: { readonly cookies: readonly SessionCookie[] };
   /** A Playwright session on the app's baseUrl, signed in by logInAs. */
   session: PlaywrightSession;
-  /** A request-adapter session on the app's handler (no browser), signed in by logInAs from its next step. */
+  /** A request-adapter session on the app's handler (no browser), signed in by logInAs. */
   request: RequestSession;
   /** An Eden Treaty client on the app, in-process (app.handle, no port), typed from its routes; sends logInAs's cookies. */
   api: Treaty.Create<App>;
@@ -160,8 +160,8 @@ class AuthState {
   cookies: SessionCookie[] = [];
   /** Phase 1, may fail: e.g. add the cookies to a live browser context. */
   prepare: ((cookies: SessionCookie[]) => Promise<void>)[] = [];
-  /** Phase 2, after every prepare succeeded: must not fail (e.g. queue the request's cookies). */
-  commit: ((cookies: SessionCookie[]) => void)[] = [];
+  /** Phase 2, after every prepare succeeded: must not fail (e.g. put the cookies in the request's jar). */
+  commit: ((cookies: SessionCookie[]) => void | Promise<void>)[] = [];
 
   /**
    * Two-phase: if any prepare step fails, the login is refused and nothing
@@ -171,7 +171,7 @@ class AuthState {
     for (const prepare of this.prepare) await prepare(cookies);
     const replaced = new Set(cookies.map(cookieKey));
     this.cookies = [...this.cookies.filter((c) => !replaced.has(cookieKey(c))), ...cookies];
-    for (const commit of this.commit) commit(cookies);
+    for (const commit of this.commit) await commit(cookies);
   }
 }
 
@@ -452,11 +452,10 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
     ) => {
       const { createSession } = await import("feather-testing-core/request");
       const request = createSession(handler, { cookies: [...auth.cookies] });
-      // Each login is queued as a step: it applies from the session's next
-      // step on (steps already queued and not yet awaited run before it).
-      auth.commit.push((cookies) => {
-        request.addCookies(cookies);
-      });
+      // Each login goes into the jar at once (setCookies is outside the
+      // step queue), so the request switches at the same moment as the
+      // browser, even under steps already queued.
+      auth.commit.push((cookies) => request.setCookies(cookies));
       await use(request);
     },
     api: async ({ app, auth }: { app: App; auth: AuthState }, use: (api: Treaty.Create<App>) => Promise<void>) => {
