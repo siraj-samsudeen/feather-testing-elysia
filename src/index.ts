@@ -454,17 +454,16 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
         // differently from how it was given, e.g. .localhost as localhost,
         // so where a new cookie lands can't be read back reliably). A
         // partitioned cookie is another cookie, never replaced here.
+        const touches = (stored: Stored) =>
+          !stored.partitionKey &&
+          cookies.some(
+            (c) =>
+              c.name === stored.name &&
+              (c.path ?? "/") === stored.path &&
+              effectiveDomain(c, host) === stored.domain.replace(/^\./, "").toLowerCase(),
+          );
         const before = await context.cookies();
-        const replaced = before.filter(
-          (stored) =>
-            !stored.partitionKey &&
-            cookies.some(
-              (c) =>
-                c.name === stored.name &&
-                (c.path ?? "/") === stored.path &&
-                effectiveDomain(c, host) === stored.domain.replace(/^\./, "").toLowerCase(),
-            ),
-        );
+        const replaced = before.filter(touches);
         for (const stored of replaced) {
           await context.clearCookies({ name: stored.name, domain: stored.domain, path: stored.path });
         }
@@ -475,8 +474,17 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
           await context.addCookies(forPlaywright(cookies, baseUrl));
         } catch (error) {
           // The browser refused a cookie: put the previous login back, so a
-          // failed login leaves the context as it was.
-          await keep(before).catch(() => undefined);
+          // failed login leaves the context as it was. The add may have
+          // installed some cookies before failing (Chromium's batches have
+          // been all-or-nothing, but nothing promises it), so first clear
+          // every cookie with one of this login's identities, then restore
+          // the snapshot.
+          await (async () => {
+            for (const stored of (await context.cookies()).filter(touches)) {
+              await context.clearCookies({ name: stored.name, domain: stored.domain, path: stored.path });
+            }
+            await keep(before);
+          })().catch(() => undefined);
           throw error;
         }
       };

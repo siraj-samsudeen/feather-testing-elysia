@@ -79,3 +79,31 @@ for (const [label, change, message] of invalid) {
     expect(auth.cookies).toEqual([]);
   });
 }
+
+secondLoginExpires(-1)(
+  "an add that installs the new cookie and then fails is rolled back to the previous login",
+  async ({ db, logInAs, session, page, api, request, auth }) => {
+    call = 0;
+    await logInAs(await users.insert(db, { name: "Alice" }));
+    await session.visit("/").assertText("Alice's todos");
+
+    const aliceValue = auth.cookies[0]!.value;
+    const context = page.context();
+    const realAdd = context.addCookies.bind(context);
+    context.addCookies = async (list) => {
+      if (list.some((c) => c.name === SESSION_COOKIE && c.value !== aliceValue)) {
+        await realAdd(list); // installed...
+        throw new Error("browser failed part-way"); // ...then failed
+      }
+      return realAdd(list);
+    };
+    await expect(logInAs(await users.insert(db, { name: "Bob" }))).rejects.toThrow("browser failed part-way");
+    context.addCookies = realAdd;
+
+    const sids = (await context.cookies()).filter((c) => c.name === SESSION_COOKIE);
+    expect(sids.map((c) => c.value)).toEqual([aliceValue]);
+    await session.visit("/").assertText("Alice's todos");
+    expect((await api.api.me.get()).data).toMatchObject({ name: "Alice" });
+    await request.visit("/").assertText("Alice's todos");
+  },
+);
