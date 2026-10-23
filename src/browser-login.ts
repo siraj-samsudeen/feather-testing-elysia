@@ -63,7 +63,10 @@ export function browserLogin(page: Page, baseUrl: string): (cookies: SessionCook
           await context.clearCookies({ name: stored.name, domain: stored.domain, path: stored.path });
         }
         await keep(before);
-      })().catch(() => undefined);
+      })().catch((rollbackError: unknown) => {
+        // The original error is the one thrown; a failed rollback rides along as its cause.
+        if (error instanceof Error && error.cause === undefined) error.cause = rollbackError;
+      });
       throw error;
     }
   };

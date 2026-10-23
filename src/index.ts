@@ -278,7 +278,7 @@ function checkedApp<App>(app: App): App {
     app instanceof Promise || typeof (app as { then?: unknown } | null)?.then === "function"
       ? "a Promise — make it synchronous; async plugins are awaited for you"
       : app === null || typeof app !== "object"
-        ? String(app === null ? "null" : typeof app === "undefined" ? "undefined" : typeof app)
+        ? app === null ? "null" : typeof app
         : "an object without handle()";
   throw new Error(`featherTest: createApp must return an Elysia app synchronously (got ${got})`);
 }

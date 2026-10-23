@@ -5,13 +5,16 @@ import type { SessionCookie } from "feather-testing-core";
 /** The origin in-process clients address the app on: the request adapter's default baseUrl. */
 export const APP_ORIGIN = "http://localhost";
 
+/** The app's host as in-process clients address it. */
+const APP_HOST = new URL(APP_ORIGIN).hostname;
+
 /**
  * The domain a cookie lands on, as core's request jar resolves it: no
  * domain means the app's host; case and a leading dot don't matter. Two
  * cookies with the same name, path and effective domain are the same
  * cookie, so a later login replaces an earlier one.
  */
-export function effectiveDomain(cookie: SessionCookie, appHost = new URL(APP_ORIGIN).hostname): string {
+export function effectiveDomain(cookie: SessionCookie, appHost = APP_HOST): string {
   return (cookie.domain ?? appHost).replace(/^\./, "").toLowerCase();
 }
 

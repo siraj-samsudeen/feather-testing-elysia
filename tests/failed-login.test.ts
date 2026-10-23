@@ -147,3 +147,28 @@ secondLoginExpires(-1)(
     await session.visit("/").assertText("Alice's todos");
   },
 );
+
+secondLoginExpires(-1)(
+  "when the add and the restore both fail, the add's error is thrown with the restore's as its cause",
+  async ({ db, logInAs, session, page }) => {
+    call = 0;
+    expect(session).toBeDefined(); // the browser step
+    await logInAs(await users.insert(db, { name: "Alice" }));
+    const context = page.context();
+    const realAdd = context.addCookies.bind(context);
+    let calls = 0;
+    context.addCookies = async () => {
+      calls++;
+      throw new Error(calls === 1 ? "add refused" : "restore refused");
+    };
+    const error = await logInAs(await users.insert(db, { name: "Bob" })).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    context.addCookies = realAdd;
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe("add refused");
+    expect(((error as Error).cause as Error | undefined)?.message).toBe("restore refused");
+  },
+);
