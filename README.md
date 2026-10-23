@@ -144,7 +144,7 @@ withFakeMailer("sends the welcome email", async ({ request }) => { /* … */ });
 | `handler` | test | `(req) => app.handle(req)` | `.with({ handler })` |
 | `baseUrl` | test | `app.listen(0)` → `http://localhost:<port>`; `app.stop()` after. Only when a test (or `session`) asks for it: a request-only test never opens a port | `.with({ baseUrl: "http://…" })` to point at another server |
 | `session` | test | A Playwright session (core's adapter) on `page`, `baseUrl` preset, signed in by `logInAs` (each login is added to its browser context at once, so the latest login wins) | `.with({ headed, record, browserName, slowMo })` |
-| `request` | test | A request-adapter session on `handler` (no browser, in-process), signed in by `logInAs`. Created on its first DSL call | |
+| `request` | test | A request-adapter session on `handler` (no browser, in-process), signed in by `logInAs` from its next step | |
 | `api` | test | An Eden Treaty client on `app.handle`: in-process, no HTTP, typed from the app's routes; sends `logInAs`'s cookies that match each call's URL | |
 | `logInAs` | test | `(user) => Promise<{ cookies, request, api }>`, see below | `.with({ mintSession })` |
 | `db` | test | With `db` configured: the Drizzle handle on the test's transaction (`strategy: "tx"`) or cloned database (`"clone"`). The same handle `app` got | `db` option |
@@ -182,7 +182,7 @@ interface SessionCookie {            // core's, re-exported here (Playwright's s
 `await logInAs(user)`:
 
 1. calls `mintSession({ db, user, app })`;
-2. signs in the test's own `session`, `request` and `api` with those cookies. The browser `session` gets them in its context immediately, so the latest login wins, even over steps already queued. `request` is created on its first DSL call (`visit`, …), so cookies minted earlier in the test body go in through core's `cookies` option. A `request` session that has already started cannot take new cookies (core's request driver seeds its jar when it is created), so `logInAs` throws, saying to call it earlier or use the returned `request`;
+2. signs in the test's own `session`, `request` and `api` with those cookies. The browser `session` gets them in its context immediately, so the latest login wins, even over steps already queued. `request` gets them through core's `addCookies`, queued as a step: they apply from its next step on, and steps queued before `logInAs` and not yet awaited run first, as the previous user;
 3. returns `{ cookies, request, api }`: that user's cookies, plus a fresh request session and Eden client of their own. Use them for several users in one test:
 
 ```ts
@@ -207,8 +207,8 @@ Without `mintSession`, `logInAs` throws, naming the option.
 ## Limits (v0.1)
 
 - **bun test first.** `runner` accepts Vitest's `{ test, afterAll }`, but only `bun test` is tested.
-- **`request` is a proxy** created on its first DSL call (so `logInAs` can still sign it in). `request instanceof Session` is false, and it is not a thenable until its first step is queued; everything else behaves the same.
-- **A started `request` session can't be signed in**, see above. The browser `session` can.
+- **The `request` that `logInAs` returns is a proxy** created on its first DSL call (so happy-dom loads only if it is used). It is not `instanceof Session`, and not a thenable until its first step is queued; everything else behaves the same.
+- **Queued steps and logins.** The browser `session` takes a login at once, even over steps already queued; `request` takes it from its next step (core's `addCookies` is a step). Await a chain before switching user if that difference matters.
 - **`api` sends cookies but does not store them.**
 - **One app per test.** `handler`, `baseUrl`, `api` and `logInAs` all use the same `app`.
 - **PGlite gaps** (one connection, extensions as modules, `now()` frozen within a transaction): see feather-testing-postgres's README.

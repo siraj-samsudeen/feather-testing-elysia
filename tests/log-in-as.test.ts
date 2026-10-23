@@ -47,10 +47,14 @@ test("logInAs after the browser session's first step adds the cookie to its cont
   await session.visit("/").assertText("Alice's todos");
 });
 
-test("logInAs after the request session's first step says what to do instead", async ({ db, logInAs, request }) => {
+test("logInAs after the request session's first step signs it in from its next step", async ({ db, logInAs, request }) => {
   const alice = await users.insert(db, { name: "Alice" });
+  const bob = await users.insert(db, { name: "Bob" });
   await request.visit("/").assertPath("/login");
-  await expect(logInAs(alice)).rejects.toThrow(/before its first step.*returns/);
+  await logInAs(alice);
+  await request.visit("/").assertText("Alice's todos");
+  await logInAs(bob);
+  await request.visit("/").assertText("Bob's todos");
 });
 
 let seen: { db: unknown; user: unknown; app: unknown } | undefined;
@@ -77,13 +81,4 @@ test("switching user between queuing and running the browser's first step runs a
   const chain = session.visit("/"); // queued as Alice, not run yet
   await logInAs(await users.insert(db, { name: "Bob" }));
   await chain.assertText("Bob's todos").refuteText("Alice's todos");
-});
-
-test("incidental reads don't start the request session", async ({ db, logInAs, request }) => {
-  Bun.inspect(request);
-  Object.prototype.toString.call(request);
-  expect("visit" in request).toBe(true);
-  expect((request as unknown as { then?: unknown }).then).toBeUndefined();
-  await logInAs(await users.insert(db, { name: "Alice" })); // would throw if the session had started
-  await request.visit("/").assertText("Alice's todos");
 });

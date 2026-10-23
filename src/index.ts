@@ -125,16 +125,16 @@ export interface ElysiaFixtures<App extends AnyElysia, Db, User> {
   mintSession: MintSession<User, Db, App> | undefined;
   /**
    * Sign `user` in: mintSession({ db, user, app }) makes the cookies, and
-   * the test's own session, request and api use them from then on (call it
-   * before the request session's first step). Returns that user's cookies
+   * the test's own session, request and api use them from then on (the
+   * browser at once; request from its next step). Returns that user's cookies
    * and request / api clients of their own, for tests with several users.
    */
   logInAs: (user: User) => Promise<SignedIn<App>>;
   /** The cookies of the latest logInAs, which session, request and api start with. */
   auth: { readonly cookies: readonly SessionCookie[] };
-  /** A Playwright session on the app's baseUrl, signed in by logInAs. Created on first use. */
+  /** A Playwright session on the app's baseUrl, signed in by logInAs. */
   session: PlaywrightSession;
-  /** A request-adapter session on the app's handler (no browser), signed in by logInAs. Created on first use. */
+  /** A request-adapter session on the app's handler (no browser), signed in by logInAs from its next step. */
   request: RequestSession;
   /** An Eden Treaty client on the app, in-process (app.handle, no port), typed from its routes; sends logInAs's cookies. */
   api: Treaty.Create<App>;
@@ -157,14 +157,11 @@ export type FeatherFixtures<App extends AnyElysia, Db, User = unknown> = Omit<
 /** The cookies the test is signed in with, and who to tell when they change. */
 class AuthState {
   cookies: SessionCookie[] = [];
-  /** Run before the cookies change; a guard throws to refuse the login. */
-  guards: (() => void)[] = [];
   /** Run before they change, e.g. to add them to a live browser context. */
   appliers: ((cookies: SessionCookie[]) => Promise<void>)[] = [];
 
-  /** The cookies change only once every guard and applier has accepted them. */
+  /** The cookies change only once every applier has accepted them. */
   async logIn(cookies: SessionCookie[]): Promise<void> {
-    for (const guard of this.guards) guard();
     for (const apply of this.appliers) await apply(cookies);
     const key = (c: SessionCookie) => `${c.name}\u0000${effectiveDomain(c)}\u0000${c.path ?? "/"}`;
     const replaced = new Set(cookies.map(key));
@@ -237,9 +234,9 @@ function apiClient<App extends AnyElysia>(app: App, cookies: () => readonly Sess
 }
 
 /**
- * A session created on its first DSL call (visit, fillIn, ...), so cookies
- * minted by logInAs inside the test body still go in through core's
- * `cookies` option. Other reads (then, Symbol.toStringTag, inspection) see
+ * A session created on its first DSL call (visit, fillIn, ...): the request
+ * logInAs returns, so core's request adapter (and happy-dom) load only
+ * when it is used. Other reads (then, Symbol.toStringTag, inspection) see
  * the prototype and create nothing; in particular the proxy is not a
  * thenable until created.
  */
@@ -268,8 +265,8 @@ function lazySession<T extends object>(proto: object, make: () => T, created: ()
 /** Core's cookie rule for Playwright: without a domain, host-only for baseUrl. */
 /**
  * A negative `expires` (-1 in Playwright's cookies) means a session cookie.
- * Leave it out before handing cookies to core or Playwright: core 0.7.0-beta.1's
- * request jar reads -1 as expired, and Playwright accepts no negative but -1.
+ * Leave it out before handing cookies to Playwright, which accepts no
+ * negative but -1. (Core's request jar reads any negative as a session cookie.)
  */
 function asSessionCookies(cookies: readonly SessionCookie[]): SessionCookie[] {
   return cookies.map(({ expires, ...rest }) => (expires !== undefined && expires >= 0 ? { ...rest, expires } : rest));
@@ -347,7 +344,7 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
         // happy-dom, which a browser- or API-only project may not have.
         request: lazySession(
           Session.prototype,
-          () => (request ??= loadRequestAdapter().createSession((r) => app.handle(r), { cookies: asSessionCookies(cookies) })),
+          () => (request ??= loadRequestAdapter().createSession((r) => app.handle(r), { cookies })),
           () => request,
         ),
         api: apiClient(app, () => cookies),
@@ -419,23 +416,13 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
       use: (request: RequestSession) => Promise<void>,
     ) => {
       const { createSession } = await import("feather-testing-core/request");
-      let real: RequestSession | undefined;
-      auth.guards.push(() => {
-        if (real) {
-          throw new Error(
-            "logInAs: the test's request session has already started, so it cannot be signed in now. " +
-              "Call logInAs before its first step, or use the request logInAs returns: " +
-              "const { request } = await logInAs(user).",
-          );
-        }
+      const request = createSession(handler, { cookies: [...auth.cookies] });
+      // Each login is queued as a step: it applies from the session's next
+      // step on (steps already queued and not yet awaited run before it).
+      auth.appliers.push(async (cookies) => {
+        request.addCookies(cookies);
       });
-      await use(
-        lazySession(
-          Session.prototype,
-          () => (real ??= createSession(handler, { cookies: asSessionCookies(auth.cookies) })),
-          () => real,
-        ),
-      );
+      await use(request);
     },
     api: async ({ app, auth }: { app: App; auth: AuthState }, use: (api: Treaty.Create<App>) => Promise<void>) => {
       await use(apiClient(app, () => auth.cookies));

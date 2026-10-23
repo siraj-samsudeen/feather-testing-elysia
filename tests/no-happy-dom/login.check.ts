@@ -24,3 +24,11 @@ test("the returned request fails only when used, naming happy-dom", async ({ db,
   const { request } = await logInAs(await users.insert(db));
   expect(() => request.visit("/")).toThrow(/happy-dom/);
 });
+
+test("incidental reads don't create the returned request (creating it would need happy-dom)", async ({ db, logInAs }) => {
+  const { request } = await logInAs(await users.insert(db));
+  Bun.inspect(request);
+  Object.prototype.toString.call(request);
+  expect("visit" in request).toBe(true);
+  expect((request as unknown as { then?: unknown }).then).toBeUndefined();
+});
