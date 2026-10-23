@@ -157,14 +157,20 @@ export type FeatherFixtures<App extends AnyElysia, Db, User = unknown> = Omit<
 /** The cookies the test is signed in with, and who to tell when they change. */
 class AuthState {
   cookies: SessionCookie[] = [];
-  /** Run before they change, e.g. to add them to a live browser context. */
-  appliers: ((cookies: SessionCookie[]) => Promise<void>)[] = [];
+  /** Phase 1, may fail: e.g. add the cookies to a live browser context. */
+  prepare: ((cookies: SessionCookie[]) => Promise<void>)[] = [];
+  /** Phase 2, after every prepare succeeded: must not fail (e.g. queue the request's cookies). */
+  commit: ((cookies: SessionCookie[]) => void)[] = [];
 
-  /** The cookies change only once every applier has accepted them. */
+  /**
+   * Two-phase: if any prepare step fails, the login is refused and nothing
+   * else changes (auth, api, request keep the previous user).
+   */
   async logIn(cookies: SessionCookie[]): Promise<void> {
-    for (const apply of this.appliers) await apply(cookies);
+    for (const prepare of this.prepare) await prepare(cookies);
     const replaced = new Set(cookies.map(cookieKey));
     this.cookies = [...this.cookies.filter((c) => !replaced.has(cookieKey(c))), ...cookies];
+    for (const commit of this.commit) commit(cookies);
   }
 }
 
@@ -425,7 +431,7 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
         await context.addCookies(forPlaywright(cookies, baseUrl));
       };
       if (auth.cookies.length > 0) await toContext(auth.cookies);
-      auth.appliers.push(toContext);
+      auth.prepare.push(toContext);
       await use(createSession(page, { baseUrl }));
     },
     request: async (
@@ -436,7 +442,7 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
       const request = createSession(handler, { cookies: [...auth.cookies] });
       // Each login is queued as a step: it applies from the session's next
       // step on (steps already queued and not yet awaited run before it).
-      auth.appliers.push(async (cookies) => {
+      auth.commit.push((cookies) => {
         request.addCookies(cookies);
       });
       await use(request);

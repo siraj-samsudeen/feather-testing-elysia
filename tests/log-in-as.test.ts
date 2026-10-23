@@ -82,3 +82,19 @@ test("switching user between queuing and running the browser's first step runs a
   await logInAs(await users.insert(db, { name: "Bob" }));
   await chain.assertText("Bob's todos").refuteText("Alice's todos");
 });
+
+test("a login whose browser step fails changes nobody's identity", async ({ db, logInAs, request, session, page, api, auth }) => {
+  const alice = await users.insert(db, { name: "Alice" });
+  const bob = await users.insert(db, { name: "Bob" });
+  await logInAs(alice);
+  await request.visit("/").assertText("Alice's todos");
+  expect(session).toBeDefined();
+  const before = [...auth.cookies];
+
+  await page.context().close(); // the browser step of the next login will throw
+  await expect(logInAs(bob)).rejects.toThrow();
+
+  expect(auth.cookies).toEqual(before);
+  expect((await api.api.me.get()).data).toMatchObject({ name: "Alice" });
+  await request.visit("/").assertText("Alice's todos");
+});
