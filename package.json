@@ -1,0 +1,50 @@
+{
+  "name": "feather-testing-elysia",
+  "version": "0.1.0",
+  "description": "Playwright-style fixtures for Elysia apps under bun test: app, handler, baseUrl, session, request, api (Eden), a real Postgres db per test, and logInAs(user).",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/siraj-samsudeen/feather-testing-elysia.git"
+  },
+  "keywords": ["testing", "elysia", "bun", "fixtures", "playwright", "eden", "drizzle", "postgres", "pglite"],
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": ["src", "README.md", "LICENSE"],
+  "scripts": {
+    "test": "bun test",
+    "test:pglite": "FEATHER_DB=pglite bun test",
+    "test:postgres": "FEATHER_DB=postgres DATABASE_URL=${DATABASE_URL:-postgres://postgres:postgres@127.0.0.1:5432/feather_elysia_test} bun test",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate --dialect postgresql --schema tests/example/schema.ts --out tests/example/drizzle",
+    "prepublishOnly": "node -e \"const p=require('./package.json');const bad=Object.entries(p.devDependencies).filter(([,v])=>v.startsWith('file:'));if(bad.length){console.error('Not publishable yet: foundations are local packs:',bad.map(([k])=>k).join(', '));process.exit(1)}\""
+  },
+  "peerDependencies": {
+    "@elysiajs/eden": ">=1.4.0 <2",
+    "elysia": ">=1.4.0 <2",
+    "feather-testing-core": ">=0.7.0-beta.1 <0.8",
+    "feather-testing-postgres": ">=0.2.0 <0.3",
+    "playwright": ">=1.64.0"
+  },
+  "peerDependenciesMeta": {
+    "feather-testing-postgres": { "optional": true },
+    "playwright": { "optional": true }
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.11",
+    "@elysiajs/eden": "1.4.9",
+    "@types/bun": "^1.4.4",
+    "drizzle-kit": "^0.31.11",
+    "drizzle-orm": "~0.45.4",
+    "elysia": "1.4.30",
+    "feather-testing-core": "file:vendor/feather-testing-core-0.7.0-beta.1.tgz",
+    "feather-testing-postgres": "file:vendor/feather-testing-postgres-0.2.0.tgz",
+    "happy-dom": "~20.14.6",
+    "playwright": "1.64.1",
+    "typescript": "~5.9.3"
+  }
+}

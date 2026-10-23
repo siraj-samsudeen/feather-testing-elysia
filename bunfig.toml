@@ -1,0 +1,3 @@
+[test]
+# Browser tests launch Chromium and load pages; bun's default is 5000 ms.
+timeout = 20000
