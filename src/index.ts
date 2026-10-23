@@ -452,11 +452,13 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
       await use(apiClient(app, () => auth.cookies));
     },
     baseUrl: async ({ app }: { app: App }, use: (url: string) => Promise<void>) => {
-      app.listen(0);
       try {
+        // Inside the try: Elysia sets app.server before running onStart
+        // hooks, so a throwing hook still leaves a server to stop.
+        app.listen(0);
         await use(`http://localhost:${app.server!.port}`);
       } finally {
-        await app.stop();
+        if (app.server) await app.stop();
       }
     },
   };
