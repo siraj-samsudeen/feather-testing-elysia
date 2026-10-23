@@ -180,7 +180,7 @@ class AuthState {
   async logIn(cookies: SessionCookie[]): Promise<void> {
     for (const guard of this.guards) guard();
     for (const apply of this.appliers) await apply(cookies);
-    const key = (c: SessionCookie) => `${c.name}\u0000${c.domain ?? ""}\u0000${c.path ?? "/"}`;
+    const key = (c: SessionCookie) => `${c.name}\u0000${effectiveDomain(c)}\u0000${c.path ?? "/"}`;
     const replaced = new Set(cookies.map(key));
     this.cookies = [...this.cookies.filter((c) => !replaced.has(key(c))), ...cookies];
   }
@@ -188,6 +188,16 @@ class AuthState {
 
 /** The origin in-process clients address the app on: the request adapter's default baseUrl. */
 const APP_ORIGIN = "http://localhost";
+
+/**
+ * The domain a cookie lands on, as core's request jar resolves it: no
+ * domain means the app's host; case and a leading dot don't matter. Two
+ * cookies with the same name, path and effective domain are the same
+ * cookie, so a later login replaces an earlier one.
+ */
+function effectiveDomain(cookie: SessionCookie, appHost = new URL(APP_ORIGIN).hostname): string {
+  return (cookie.domain ?? appHost).replace(/^\./, "").toLowerCase();
+}
 
 /**
  * The Cookie header a browser would send to `url`, by the rules of core's
@@ -380,7 +390,22 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
       // so the latest login always wins, even over steps already queued.
       // (Not core's cookies option: it is read when the first step runs,
       // and would re-seed an earlier user's cookies over a later login.)
-      const toContext = (cookies: SessionCookie[]) => page.context().addCookies(forPlaywright(cookies, baseUrl));
+      const host = new URL(baseUrl).hostname;
+      const toContext = async (cookies: SessionCookie[]) => {
+        // A host-only and a Domain cookie are two cookies to the browser;
+        // drop the earlier login's one that this login replaces.
+        const context = page.context();
+        for (const old of await context.cookies()) {
+          const replaced = cookies.some(
+            (c) =>
+              c.name === old.name &&
+              (c.path ?? "/") === old.path &&
+              effectiveDomain(c, host) === old.domain.replace(/^\./, "").toLowerCase(),
+          );
+          if (replaced) await context.clearCookies({ name: old.name, domain: old.domain, path: old.path });
+        }
+        await context.addCookies(forPlaywright(cookies, baseUrl));
+      };
       if (auth.cookies.length > 0) await toContext(auth.cookies);
       auth.appliers.push(toContext);
       await use(createSession(page, { baseUrl }));
