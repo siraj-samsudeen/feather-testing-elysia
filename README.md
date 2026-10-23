@@ -126,8 +126,10 @@ featherTest<App, Db, User>({
   db?: DbOptions | FeatherDb,                    // feather-testing-postgres: createFeatherDb options, or a FeatherDb
   mintSession?: MintSession<User, Db, App>,      // what logInAs uses
   runner?: { test, afterAll },                   // default: bun:test's
-}): TestFn<FeatherFixtures<App, Db, User>>
+}): FeatherTestFn<FeatherFixtures<App, Db, User>>
 ```
+
+The three type parameters are inferred; you rarely write them. `App` comes from what `createApp` returns (it types `app` and `api`). `Db` comes from `createApp`'s `db` parameter (it types `db`). `User` comes from `mintSession`'s `user` parameter, so **annotating `user` in `mintSession` is what types `logInAs(user)`**: `mintSession: async ({ db, user }: { db: AppDb; user: { id: number } }) => …`. Without an annotation, `User` is `unknown` and `logInAs` takes anything.
 
 It returns core's test function (`defineCoreTest(runner).extend(...)`), so `.extend({...})` adds your own fixtures and `.with({...})` replaces values for a group of tests. `createApp` and `mintSession` are taken as plain functions there; no `value(...)` needed, unlike other function values in core's `.with()`:
 
@@ -177,7 +179,7 @@ interface SessionCookie {            // core's, re-exported here (Playwright's s
 - `db` is the test's db (inside its transaction), so the session row it inserts is visible to the app and rolled back after. Without a db configured it is `undefined`.
 - Return exactly the cookie(s) your login route would set. Call the same function your login route calls (`startSession(db, user.id)` in the example) rather than duplicating it.
 - Cookies are checked before anything changes: a name with spaces or `;=,`, a value with `;`, a non-finite `expires` or one that looks like milliseconds (`expires` is seconds), a path not starting with `/`, an empty domain or an unknown `sameSite` makes `logInAs` throw, naming the cookie, and every client stays as it was.
-- Whatever `user` is (a row, an id) is up to you: `logInAs(user)` passes it through, typed from `mintSession`'s parameter.
+- Whatever `user` is (a row, an id) is up to you: `logInAs(user)` passes it through. Annotate `user` in `mintSession` to type `logInAs` (see [featherTest(options)](#feathertestoptions)).
 - With better-auth later, `mintSession` is where its session creation goes; nothing else changes.
 
 `await logInAs(user)`:
