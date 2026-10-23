@@ -44,7 +44,7 @@
     "feather-testing-core": ">=0.7.0-beta.1 <0.8",
     "feather-testing-postgres": ">=0.2.0 <0.3",
     "happy-dom": ">=20.0.0 <22",
-    "playwright": ">=1.64.0 <2"
+    "playwright": ">=1.51.0 <2"
   },
   "peerDependenciesMeta": {
     "feather-testing-postgres": {

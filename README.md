@@ -185,7 +185,7 @@ interface SessionCookie {            // core's, re-exported here (Playwright's s
 `await logInAs(user)`:
 
 1. calls `mintSession({ db, user, app })`;
-2. signs in the test's own `session`, `request` and `api` with those cookies. The browser `session` gets them in its context and `request` in its jar (core's `setCookies`), at once, so every client switches at the same moment, even for steps already queued. If any step of the login fails, none of them switches;
+2. signs in the test's own `session`, `request` and `api` with those cookies. The browser `session` gets them in its context and `request` in its jar (core's `addCookiesNow`), at once, so every client switches at the same moment, even for steps already queued. If any step of the login fails, none of them switches;
 3. returns `{ cookies, request, api }`: that user's cookies, plus a fresh request session and Eden client of their own. Use them for several users in one test:
 
 ```ts
@@ -195,6 +195,8 @@ await asAlice.request.visit("/").refuteText("Bob's errand");
 ```
 
 **Await your steps before `logInAs`, and await `logInAs` before your next steps; anything else fails loudly.** `logInAs` refuses, before minting anything, while a `session` or `request` chain is still running (`logInAs needs your request steps to be finished — await them before logging in`). A chain started while a login is in progress refuses too (`request steps were started while logInAs(…) was in progress — await logInAs first`), and its steps are dropped. Either way nothing changes: every client stays as it was. Don't call `logInAs` from inside a step.
+
+Chains and logins started inside `mintSession` itself are exempt while it runs (a nested `logInAs` is refused at once instead of deadlocking). On Bun the mintSession exemption ends exactly when mintSession settles. On Node, an async mintSession must not leave work (timers, microtasks) that drives sessions or calls logInAs.
 
 Logins run one at a time, in the order they were called: overlapping `logInAs` calls (`Promise.all([...])`) can't interleave, and the last one started wins everywhere. A failed login doesn't block the next.
 

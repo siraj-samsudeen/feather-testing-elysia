@@ -22,7 +22,7 @@
         "elysia": ">=1.4.0 <2",
         "feather-testing-core": ">=0.7.0-beta.1 <0.8",
         "feather-testing-postgres": ">=0.2.0 <0.3",
-        "happy-dom": ">=20.0.0",
+        "happy-dom": ">=20.0.0 <22",
         "playwright": ">=1.64.0 <2",
       },
       "optionalPeers": [
@@ -135,7 +135,7 @@
 
     "fast-decode-uri-component": ["fast-decode-uri-component@1.0.1", "", {}, "sha512-WKgKWg5eUxvRZGwW8FvfbaH7AXSh2cL+3j5fMGzUMCxWBJ3dV3a7Wz8y2f/uQ0e3B6WmodD3oS54jTQ9HVTIIg=="],
 
-    "feather-testing-core": ["feather-testing-core@vendor/feather-testing-core-0.7.0-beta.1.tgz", { "peerDependencies": { "@testing-library/react": ">=14.0.0", "@testing-library/user-event": ">=14.0.0", "happy-dom": ">=20.0.0", "playwright": ">=1.64.0" }, "optionalPeers": ["@testing-library/react", "@testing-library/user-event", "happy-dom", "playwright"] }, "sha512-2RS76XC8HReY7nKNrBY4p9mH07Ck3A9NvKxUL3+RtvREmhswgrNK8gHvfPAXWQ0QXD7FqQMWkqChiXOtAgG0iw=="],
+    "feather-testing-core": ["feather-testing-core@vendor/feather-testing-core-0.7.0-beta.1.tgz", { "peerDependencies": { "@testing-library/react": ">=14.0.0", "@testing-library/user-event": ">=14.0.0", "happy-dom": ">=20.0.0", "playwright": ">=1.40.0" }, "optionalPeers": ["@testing-library/react", "@testing-library/user-event", "happy-dom", "playwright"] }, "sha512-ht7eL4bM6ESjiL7IfqSeGUZdw1EZqJTwcBTKedFIWt7//M5z3BDRYcmJITW1I7MbsQIW8b4ckXQkdW+W3QBMuQ=="],
 
     "feather-testing-postgres": ["feather-testing-postgres@vendor/feather-testing-postgres-0.2.0.tgz", { "dependencies": { "feather-testing-core": "^0.4.0" }, "peerDependencies": { "@electric-sql/pglite": ">=0.3", "@happy-dom/global-registrator": ">=15", "@tanstack/react-query": ">=5", "@tanstack/react-router": ">=1", "@testing-library/dom": ">=10", "@testing-library/react": ">=16", "@testing-library/user-event": ">=14", "drizzle-orm": ">=0.44 <1", "postgres": ">=3", "react": ">=18", "react-dom": ">=18", "vitest": ">=2" }, "optionalPeers": ["@electric-sql/pglite", "@happy-dom/global-registrator", "@tanstack/react-query", "@tanstack/react-router", "@testing-library/dom", "@testing-library/react", "@testing-library/user-event", "drizzle-orm", "postgres", "react", "react-dom", "vitest"] }, "sha512-XaDKMNLB0OPTMhjpAZ0r6CYUc2Sr7srgsimyhlGAbDmOO0euuXFhR2asPTuBUpa3cXwKCyZksbrOXcnR0y2r5g=="],
 

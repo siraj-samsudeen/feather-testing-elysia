@@ -411,10 +411,10 @@ export function featherTest<App extends AnyElysia, Db = never, User = unknown>(
     ) => {
       const { createSession } = await import("feather-testing-core/request");
       const request = auth.track(createSession(handler, { cookies: [...auth.cookies] }), "request");
-      // Each login goes into the jar at once (setCookies is outside the
+      // Each login goes into the jar at once (addCookiesNow is outside the
       // step queue), so the request switches at the same moment as the
       // browser, even under steps already queued.
-      auth.commit.push((cookies) => request.setCookies(cookies));
+      auth.commit.push((cookies) => request.addCookiesNow(cookies));
       await use(request);
     },
     api: async ({ app, auth }: { app: App; auth: AuthState }, use: (api: Treaty.Create<App>) => Promise<void>) => {
